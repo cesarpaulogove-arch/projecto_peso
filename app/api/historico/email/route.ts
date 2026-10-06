@@ -21,6 +21,22 @@ const transporter = nodemailer.createTransport({
   },
 });
 
+/*
+ * Formata qualquer data para a hora de Moçambique.
+ */
+function formatarDataMaputo(data: string | Date) {
+  return new Intl.DateTimeFormat("pt-MZ", {
+    timeZone: "Africa/Maputo",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).format(new Date(data));
+}
+
 export async function POST(req: Request) {
   try {
     const body = await req.json();
@@ -87,17 +103,19 @@ export async function POST(req: Request) {
             </td>
 
             <td>
-              ${new Date(
-                item.timestamp
-              ).toLocaleString("pt-MZ")}
+              ${formatarDataMaputo(item.timestamp)}
             </td>
           </tr>
         `
       )
       .join("");
 
+    /*
+     * Data/hora atual de Moçambique.
+     * Não depende do fuso horário da Vercel.
+     */
     const dataEnvio =
-      new Date().toLocaleString("pt-MZ");
+      formatarDataMaputo(new Date());
 
     const html = `
       <!DOCTYPE html>
