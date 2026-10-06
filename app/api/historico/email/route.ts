@@ -1,5 +1,9 @@
+
 import { NextResponse } from "next/server";
 import nodemailer from "nodemailer";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 interface HistoricoItem {
   id: string | number;
@@ -10,6 +14,12 @@ interface HistoricoItem {
   printed?: boolean;
   timestamp: string;
 }
+
+/*
+ * ============================================================
+ * TRANSPORTADOR DE EMAIL
+ * ============================================================
+ */
 
 const transporter = nodemailer.createTransport({
   host: process.env.EMAIL_SMTP_HOST,
@@ -22,20 +32,40 @@ const transporter = nodemailer.createTransport({
 });
 
 /*
- * Formata qualquer data para a hora de Moçambique.
+ * ============================================================
+ * DATA/HORA DE MOÇAMBIQUE
+ * ============================================================
  */
-function formatarDataMaputo(data: string | Date) {
+
+function formatarDataMaputo(data: string | Date): string {
+  const dataConvertida = new Date(data);
+
+  if (Number.isNaN(dataConvertida.getTime())) {
+    return "Data inválida";
+  }
+
   return new Intl.DateTimeFormat("pt-MZ", {
     timeZone: "Africa/Maputo",
+    calendar: "gregory",
+    numberingSystem: "latn",
+
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
+
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
+
     hour12: false,
-  }).format(new Date(data));
+  }).format(dataConvertida);
 }
+
+/*
+ * ============================================================
+ * POST
+ * ============================================================
+ */
 
 export async function POST(req: Request) {
   try {
@@ -43,6 +73,12 @@ export async function POST(req: Request) {
 
     const historico: HistoricoItem[] =
       body.historico || [];
+
+    /*
+     * ========================================================
+     * VALIDAR HISTÓRICO
+     * ========================================================
+     */
 
     if (!Array.isArray(historico)) {
       return NextResponse.json(
@@ -62,6 +98,12 @@ export async function POST(req: Request) {
       });
     }
 
+    /*
+     * ========================================================
+     * EMAIL
+     * ========================================================
+     */
+
     const destino = process.env.EMAIL_DESTINO;
     const remetente = process.env.EMAIL_REMETENTE;
 
@@ -75,6 +117,34 @@ export async function POST(req: Request) {
         { status: 500 }
       );
     }
+
+    /*
+     * ========================================================
+     * DATA/HORA ATUAL
+     * ========================================================
+     */
+
+    const agora = new Date();
+
+    const dataUTC = agora.toISOString();
+
+    const dataMaputo = formatarDataMaputo(agora);
+
+    /*
+     * LOG PARA VERIFICAR A HORA REAL DA VERCEL
+     */
+
+    console.log("========================================");
+    console.log("TESTE DE DATA/HORA");
+    console.log("UTC:", dataUTC);
+    console.log("MAPUTO:", dataMaputo);
+    console.log("========================================");
+
+    /*
+     * ========================================================
+     * LINHAS DA TABELA
+     * ========================================================
+     */
 
     const linhas = historico
       .map(
@@ -111,11 +181,10 @@ export async function POST(req: Request) {
       .join("");
 
     /*
-     * Data/hora atual de Moçambique.
-     * Não depende do fuso horário da Vercel.
+     * ========================================================
+     * HTML DO EMAIL
+     * ========================================================
      */
-    const dataEnvio =
-      formatarDataMaputo(new Date());
 
     const html = `
       <!DOCTYPE html>
@@ -175,6 +244,7 @@ export async function POST(req: Request) {
         </head>
 
         <body>
+
           <div class="container">
 
             <h1>
@@ -182,6 +252,7 @@ export async function POST(req: Request) {
             </h1>
 
             <div class="info">
+
               <p>
                 Relatório automático do sistema
                 de armazém.
@@ -189,16 +260,18 @@ export async function POST(req: Request) {
 
               <p>
                 Data do envio:
-                ${dataEnvio}
+                ${dataMaputo}
               </p>
 
               <p>
                 Total de registos:
                 ${historico.length}
               </p>
+
             </div>
 
             <table>
+
               <thead>
                 <tr>
                   <th>Produto</th>
@@ -213,6 +286,7 @@ export async function POST(req: Request) {
               <tbody>
                 ${linhas}
               </tbody>
+
             </table>
 
             <div class="total">
@@ -221,9 +295,16 @@ export async function POST(req: Request) {
             </div>
 
           </div>
+
         </body>
       </html>
     `;
+
+    /*
+     * ========================================================
+     * ENVIAR EMAIL
+     * ========================================================
+     */
 
     const resultado = await transporter.sendMail({
       from: `"Sistema de Armazém" <${remetente}>`,
@@ -233,14 +314,23 @@ export async function POST(req: Request) {
       html,
     });
 
+    /*
+     * ========================================================
+     * RESPOSTA
+     * ========================================================
+     */
+
     return NextResponse.json({
       sucesso: true,
       enviado: true,
       total: historico.length,
+      dataUTC,
+      dataMaputo,
       messageId: resultado.messageId,
     });
 
   } catch (error) {
+
     console.error(
       "Erro ao enviar histórico:",
       error
@@ -256,3 +346,4 @@ export async function POST(req: Request) {
     );
   }
 }
+
