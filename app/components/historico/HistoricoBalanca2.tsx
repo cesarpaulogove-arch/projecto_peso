@@ -2,7 +2,7 @@
 
 import type {
   WeighingSensor2,
-} from "@/types/armazem";
+} from "../../types/armazem";
 
 interface Props {
   historico: WeighingSensor2[];
