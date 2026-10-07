@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useEffect, useRef } from "react";
@@ -13,20 +14,19 @@ interface Props {
 export default function HistoricoBalanca1({
   historico,
 }: Props) {
-
   const historicoRef =
     useRef<WeighingSensor1[]>(historico);
 
   /*
    * Mantém sempre a versão mais recente
-   * do histórico disponível para o intervalo.
+   * do histórico.
    */
   useEffect(() => {
     historicoRef.current = historico;
   }, [historico]);
 
   /*
-   * Envia todos os dados históricos
+   * Envia o histórico da BALANÇA 1
    * automaticamente a cada 10 minutos.
    */
   useEffect(() => {
@@ -38,14 +38,14 @@ export default function HistoricoBalanca1({
 
           if (!dados || dados.length === 0) {
             console.log(
-              "Nenhum histórico para enviar."
+              "Nenhum histórico da Balança 1 para enviar."
             );
 
             return;
           }
 
           console.log(
-            "Enviando histórico por e-mail..."
+            "Enviando histórico da Balança 1 por e-mail..."
           );
 
           const resposta =
@@ -61,6 +61,7 @@ export default function HistoricoBalanca1({
 
                 body: JSON.stringify({
                   historico: dados,
+                  tipo: "balanca1",
                 }),
               }
             );
@@ -70,7 +71,7 @@ export default function HistoricoBalanca1({
 
           if (!resposta.ok) {
             console.error(
-              "Erro ao enviar histórico:",
+              "Erro ao enviar histórico da Balança 1:",
               resultado
             );
 
@@ -78,19 +79,19 @@ export default function HistoricoBalanca1({
           }
 
           console.log(
-            "Histórico enviado com sucesso:",
+            "Histórico da Balança 1 enviado com sucesso:",
             resultado
           );
         } catch (error) {
           console.error(
-            "Erro no envio automático:",
+            "Erro no envio automático da Balança 1:",
             error
           );
         }
       },
 
       // 10 minutos
-      1 * 60 * 1000
+      10 * 60 * 1000
     );
 
     return () => {
@@ -107,8 +108,7 @@ export default function HistoricoBalanca1({
           </h2>
 
           <p className="text-sm text-gray-500">
-            Registos finalizados após
-            autorização e impressão.
+            Registo dos produtos pesados na Balança 1.
           </p>
         </div>
       </div>
@@ -126,18 +126,6 @@ export default function HistoricoBalanca1({
               </th>
 
               <th className="p-3">
-                Pessoa
-              </th>
-
-              <th className="p-3">
-                Fingerprint
-              </th>
-
-              <th className="p-3">
-                Impressão
-              </th>
-
-              <th className="p-3">
                 Data
               </th>
             </tr>
@@ -147,10 +135,10 @@ export default function HistoricoBalanca1({
             {historico.length === 0 ? (
               <tr>
                 <td
-                  colSpan={6}
+                  colSpan={3}
                   className="p-6 text-center text-gray-500"
                 >
-                  Nenhum registo.
+                  Nenhum produto registado.
                 </td>
               </tr>
             ) : (
@@ -159,32 +147,12 @@ export default function HistoricoBalanca1({
                   key={item.id}
                   className="border-b border-gray-100"
                 >
-                  <td className="p-3">
+                  <td className="p-3 font-medium">
                     {item.product || "-"}
                   </td>
 
                   <td className="p-3 font-semibold">
-                    {item.weight.toFixed(2)} kg
-                  </td>
-
-                  <td className="p-3">
-                    {item.pessoaNome || "-"}
-                  </td>
-
-                  <td className="p-3">
-                    {item.fingerprintId ?? "-"}
-                  </td>
-
-                  <td className="p-3">
-                    {item.printed ? (
-                      <span className="text-green-600 font-semibold">
-                        Impresso
-                      </span>
-                    ) : (
-                      <span className="text-gray-500">
-                        —
-                      </span>
-                    )}
+                    {Number(item.weight).toFixed(2)} kg
                   </td>
 
                   <td className="p-3">
@@ -201,3 +169,4 @@ export default function HistoricoBalanca1({
     </section>
   );
 }
+
