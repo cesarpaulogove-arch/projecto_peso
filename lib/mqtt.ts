@@ -262,9 +262,10 @@ export interface Balanca2AutomaticHistoryPayload
 
   timestamp: number;
 
+  timestampIso: string;
+
   dataHora: string;
 }
-
 /* ============================================================
    TÓPICOS MQTT
 ============================================================ */

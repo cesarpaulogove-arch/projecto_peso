@@ -434,21 +434,24 @@ function getPersonId(
 /* ============================================================
    PESSOA NOME
 ============================================================ */
-
 function getPersonName(
   payload:
     | SensorData
     | FingerprintData
 ): string {
 
+  const nome =
+    "nome" in payload
+      ? payload.nome
+      : undefined;
+
   return String(
     payload.pessoa_nome ??
       payload.pessoaNome ??
-      payload.nome ??
+      nome ??
       ""
   ).trim();
 }
-
 /* ============================================================
    FINGERPRINT ID
 ============================================================ */

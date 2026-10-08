@@ -1,4 +1,3 @@
-
 // ============================================================
 // DADOS DOS SENSORES / MQTT
 // ============================================================
@@ -48,6 +47,7 @@ export interface SensorData {
   timestamp?: string;
   data?: string;
   data_hora?: string;
+  dataHora?: string;
 
   // ----------------------------------------------------------
   // Pessoa
@@ -149,6 +149,7 @@ export interface FingerprintData {
   timestamp?: string | null;
   data?: string;
   data_hora?: string;
+  dataHora?: string;
 
   // ----------------------------------------------------------
   // Resultado da identificação
@@ -192,9 +193,17 @@ export interface WeighingSensor1 {
   status: string;
 
   /**
-   * Data e hora do registro.
+   * Timestamp técnico em formato ISO.
    */
   timestamp: string;
+
+  /**
+   * Data e hora formatada para apresentação.
+   *
+   * Exemplo:
+   * 08/10/2026, 16:30:45
+   */
+  dataHora: string;
 }
 
 // ============================================================
@@ -228,9 +237,17 @@ export interface WeighingSensor2 {
   status: string;
 
   /**
-   * Data e hora da alteração.
+   * Timestamp técnico em formato ISO.
    */
   timestamp: string;
+
+  /**
+   * Data e hora formatada para apresentação.
+   *
+   * Exemplo:
+   * 08/10/2026, 16:30:45
+   */
+  dataHora: string;
 
   /**
    * Peso imediatamente anterior.
@@ -258,9 +275,6 @@ export interface FingerprintHistory {
   /**
    * Identificador ÚNICO de cada utilização.
    *
-   * IMPORTANTE:
-   * Não utilizar o fingerprintId como ID deste registro.
-   *
    * A mesma pessoa pode utilizar a fingerprint
    * várias vezes e cada utilização deve criar
    * uma nova linha.
@@ -269,9 +283,6 @@ export interface FingerprintHistory {
 
   /**
    * ID cadastrado no sensor biométrico.
-   *
-   * Exemplo:
-   * fingerprintId = 5
    */
   fingerprintId?: number;
 
@@ -294,19 +305,11 @@ export interface FingerprintHistory {
   /**
    * O histórico de utilização contém
    * somente fingerprints autorizadas.
-   *
-   * Portanto, para os registros guardados
-   * no localStorage, este valor será sempre true.
    */
   autorizado: boolean;
 
   /**
    * Estado original recebido do ESP32.
-   *
-   * Exemplos:
-   * "identificado"
-   * "recognized"
-   * "authorized"
    */
   status: string;
 
@@ -316,9 +319,14 @@ export interface FingerprintHistory {
   mensagem?: string;
 
   /**
-   * Data e hora da utilização.
+   * Timestamp técnico em formato ISO.
    */
   timestamp: string;
+
+  /**
+   * Data e hora formatada para apresentação.
+   */
+  dataHora: string;
 
   /**
    * Dispositivo que realizou
@@ -345,9 +353,6 @@ export interface Person {
 
   /**
    * Estado do cadastro.
-   *
-   * Exemplo:
-   * "cadastrado"
    */
   status: string;
 
@@ -356,4 +361,3 @@ export interface Person {
    */
   timestamp: string;
 }
-
