@@ -150,13 +150,14 @@ export default function Page() {
             RECONHECIMENTO FINGERPRINT
         ====================================================== */}
 
-        <ReconhecimentoFingerprint
-          pending={armazem.fingerprintPending}
-          status={armazem.fingerprintStatus}
-          fingerprintId={armazem.fingerprintIdAtual}
-          pessoa={armazem.pessoaAtual}
-          onRecognize={armazem.iniciarReconhecimentoFingerprint}
-        />
+   <ReconhecimentoFingerprint
+  pending={armazem.fingerprintPending}
+  status={armazem.fingerprintStatus}
+  fingerprintId={armazem.fingerprintIdAtual}
+  pessoa={armazem.pessoaAtual}
+  fingerprintLeituraIniciada={armazem.fingerprintLeituraIniciada}
+  onRecognize={armazem.iniciarReconhecimentoFingerprint}
+/>
 
         {/* ======================================================
             HISTÓRICO BALANÇA 1
