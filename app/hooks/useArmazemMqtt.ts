@@ -1,4 +1,3 @@
-
 "use client";
 
 import {
@@ -35,6 +34,31 @@ import type {
 
 const BALANCA2_DIFERENCA_MINIMA = 1;
 
+const HISTORICO_DUPLICADO_JANELA_MS = 5000;
+
+const STORAGE_PESSOAS =
+  "armazem_pessoas";
+
+const STORAGE_HISTORICO_1 =
+  "armazem_historico_sensor1";
+
+const STORAGE_HISTORICO_2 =
+  "armazem_historico_sensor2";
+
+const STORAGE_HISTORICO_FINGERPRINT =
+  "armazem_historico_fingerprint";
+
+/*
+ * Muito importante:
+ *
+ * Enquanto o localStorage ainda não foi carregado,
+ * NÃO podemos gravar os estados iniciais [].
+ */
+const historicoInicializadoRef =
+  {
+    current: false,
+  };
+
 /* ============================================================
    HELPERS
 ============================================================ */
@@ -50,12 +74,279 @@ function isObject(
 }
 
 /* ============================================================
+   ID ÚNICO
+============================================================ */
+
+function gerarId(
+  prefixo: string
+): string {
+  return (
+    `${prefixo}-${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2, 10)}`
+  );
+}
+
+/* ============================================================
+   TIMESTAMP
+============================================================ */
+
+/*
+ * Converte corretamente:
+ *
+ * Unix segundos:
+ *   1760000000
+ *
+ * Unix milissegundos:
+ *   1760000000000
+ *
+ * ISO:
+ *   2026-10-08T12:30:00.000Z
+ *
+ * Data/hora:
+ *   08/10/2026 14:30:00
+ */
+function normalizarTimestamp(
+  value: unknown
+): string {
+
+  if (
+    value === undefined ||
+    value === null ||
+    String(value).trim() === ""
+  ) {
+    return new Date().toISOString();
+  }
+
+  /*
+   * Número real
+   */
+  if (
+    typeof value === "number" &&
+    Number.isFinite(value)
+  ) {
+
+    /*
+     * Unix em segundos
+     */
+    if (
+      value > 100000000 &&
+      value < 100000000000
+    ) {
+
+      return new Date(
+        value * 1000
+      ).toISOString();
+    }
+
+    /*
+     * Unix em milissegundos
+     */
+    if (
+      value >= 100000000000
+    ) {
+
+      const data =
+        new Date(value);
+
+      if (
+        !Number.isNaN(
+          data.getTime()
+        )
+      ) {
+        return data.toISOString();
+      }
+    }
+  }
+
+  const texto =
+    String(value).trim();
+
+  /*
+   * Número enviado como string
+   */
+  if (
+    /^\d+$/.test(texto)
+  ) {
+
+    const numero =
+      Number(texto);
+
+    if (
+      Number.isFinite(numero)
+    ) {
+
+      if (
+        numero > 100000000 &&
+        numero < 100000000000
+      ) {
+
+        return new Date(
+          numero * 1000
+        ).toISOString();
+      }
+
+      if (
+        numero >= 100000000000
+      ) {
+
+        const data =
+          new Date(numero);
+
+        if (
+          !Number.isNaN(
+            data.getTime()
+          )
+        ) {
+          return data.toISOString();
+        }
+      }
+    }
+  }
+
+  /*
+   * ISO ou outra data reconhecida pelo JS.
+   */
+  const data =
+    new Date(texto);
+
+  if (
+    !Number.isNaN(
+      data.getTime()
+    )
+  ) {
+
+    return data.toISOString();
+  }
+
+  /*
+   * Formato DD/MM/YYYY HH:mm:ss
+   */
+  const match =
+    texto.match(
+      /^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?$/
+    );
+
+  if (
+    match
+  ) {
+
+    const dia =
+      Number(match[1]);
+
+    const mes =
+      Number(match[2]) - 1;
+
+    const ano =
+      Number(match[3]);
+
+    const hora =
+      Number(match[4] ?? 0);
+
+    const minuto =
+      Number(match[5] ?? 0);
+
+    const segundo =
+      Number(match[6] ?? 0);
+
+    /*
+     * África/Maputo = UTC+2.
+     */
+    const timestamp =
+      Date.UTC(
+        ano,
+        mes,
+        dia,
+        hora - 2,
+        minuto,
+        segundo
+      );
+
+    const dataConvertida =
+      new Date(timestamp);
+
+    if (
+      !Number.isNaN(
+        dataConvertida.getTime()
+      )
+    ) {
+
+      return dataConvertida.toISOString();
+    }
+  }
+
+  return new Date().toISOString();
+}
+
+/* ============================================================
+   DATA/HORA
+============================================================ */
+
+function formatDateTime(
+  timestamp: string
+): string {
+
+  const data =
+    new Date(timestamp);
+
+  if (
+    Number.isNaN(
+      data.getTime()
+    )
+  ) {
+
+    return timestamp;
+  }
+
+  return data.toLocaleString(
+    "pt-MZ",
+    {
+      timeZone:
+        "Africa/Maputo",
+
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+
+      hour12: false,
+    }
+  );
+}
+
+/* ============================================================
+   CRIAR TIMESTAMP LOCAL
+============================================================ */
+
+function createHistoryTimestamp(): {
+  timestamp: string;
+  dataHora: string;
+} {
+
+  const timestamp =
+    new Date().toISOString();
+
+  return {
+    timestamp,
+
+    dataHora:
+      formatDateTime(
+        timestamp
+      ),
+  };
+}
+
+/* ============================================================
    PESO
 ============================================================ */
 
 function getNumericWeight(
   payload: SensorData
 ): number {
+
   const value =
     payload.peso ??
     payload.weight ??
@@ -68,9 +359,12 @@ function getNumericWeight(
     payload.sensor2 ??
     0;
 
-  const numberValue = Number(value);
+  const numberValue =
+    Number(value);
 
-  return Number.isFinite(numberValue)
+  return Number.isFinite(
+    numberValue
+  )
     ? numberValue
     : 0;
 }
@@ -82,6 +376,7 @@ function getNumericWeight(
 function getNumericWeightSensor2(
   payload: SensorData
 ): number {
+
   const value =
     payload.peso_sensor_2 ??
     payload.pesoSensor2 ??
@@ -91,9 +386,12 @@ function getNumericWeightSensor2(
     payload.value ??
     0;
 
-  const numberValue = Number(value);
+  const numberValue =
+    Number(value);
 
-  return Number.isFinite(numberValue)
+  return Number.isFinite(
+    numberValue
+  )
     ? numberValue
     : 0;
 }
@@ -105,6 +403,7 @@ function getNumericWeightSensor2(
 function getProduct(
   payload: SensorData
 ): string {
+
   return String(
     payload.produto ??
       payload.produtoNome ??
@@ -114,12 +413,15 @@ function getProduct(
 }
 
 /* ============================================================
-   ID DA PESSOA
+   PESSOA ID
 ============================================================ */
 
 function getPersonId(
-  payload: SensorData | FingerprintData
+  payload:
+    | SensorData
+    | FingerprintData
 ): string {
+
   const value =
     payload.pessoa_id ??
     payload.pessoaId;
@@ -130,12 +432,15 @@ function getPersonId(
 }
 
 /* ============================================================
-   NOME DA PESSOA
+   PESSOA NOME
 ============================================================ */
 
 function getPersonName(
-  payload: SensorData | FingerprintData
+  payload:
+    | SensorData
+    | FingerprintData
 ): string {
+
   return String(
     payload.pessoa_nome ??
       payload.pessoaNome ??
@@ -145,12 +450,15 @@ function getPersonName(
 }
 
 /* ============================================================
-   ID FINGERPRINT
+   FINGERPRINT ID
 ============================================================ */
 
 function getFingerprintId(
-  payload: SensorData | FingerprintData
+  payload:
+    | SensorData
+    | FingerprintData
 ): number | undefined {
+
   const value =
     payload.fingerprint_id ??
     payload.fingerprintId ??
@@ -161,12 +469,16 @@ function getFingerprintId(
     value === null ||
     value === ""
   ) {
+
     return undefined;
   }
 
-  const numberValue = Number(value);
+  const numberValue =
+    Number(value);
 
-  return Number.isFinite(numberValue)
+  return Number.isFinite(
+    numberValue
+  )
     ? numberValue
     : undefined;
 }
@@ -178,6 +490,7 @@ function getFingerprintId(
 function getFingerprintConfidence(
   payload: FingerprintData
 ): number | undefined {
+
   const value =
     payload.confidence ??
     payload.confianca;
@@ -187,18 +500,22 @@ function getFingerprintConfidence(
     value === null ||
     value === ""
   ) {
+
     return undefined;
   }
 
-  const numberValue = Number(value);
+  const numberValue =
+    Number(value);
 
-  return Number.isFinite(numberValue)
+  return Number.isFinite(
+    numberValue
+  )
     ? numberValue
     : undefined;
 }
 
 /* ============================================================
-   TIMESTAMP
+   TIMESTAMP DO PAYLOAD
 ============================================================ */
 
 function getTimestamp(
@@ -206,26 +523,80 @@ function getTimestamp(
     | SensorData
     | FingerprintData
 ): string {
+
+  const timestamp =
+    payload.timestamp;
+
   if (
-    payload.timestamp !== undefined &&
-    payload.timestamp !== null &&
-    String(payload.timestamp).trim() !== ""
+    timestamp !== undefined &&
+    timestamp !== null &&
+    String(timestamp).trim() !== ""
   ) {
-    return String(payload.timestamp);
+
+    return normalizarTimestamp(
+      timestamp
+    );
+  }
+
+  const dataHora =
+    "data_hora" in payload
+      ? payload.data_hora
+      : undefined;
+
+  if (
+    dataHora !== undefined &&
+    dataHora !== null &&
+    String(dataHora).trim() !== ""
+  ) {
+
+    return normalizarTimestamp(
+      dataHora
+    );
+  }
+
+  const dataHoraCamel =
+    "dataHora" in payload
+      ? payload.dataHora
+      : undefined;
+
+  if (
+    dataHoraCamel !== undefined &&
+    dataHoraCamel !== null &&
+    String(dataHoraCamel).trim() !== ""
+  ) {
+
+    return normalizarTimestamp(
+      dataHoraCamel
+    );
+  }
+
+  const data =
+    "data" in payload
+      ? payload.data
+      : undefined;
+
+  const hora =
+    "hora" in payload
+      ? payload.hora
+      : undefined;
+
+  if (
+    data &&
+    hora
+  ) {
+
+    return normalizarTimestamp(
+      `${data} ${hora}`
+    );
   }
 
   if (
-    "data_hora" in payload &&
-    payload.data_hora
+    data
   ) {
-    return String(payload.data_hora);
-  }
 
-  if (
-    "data" in payload &&
-    payload.data
-  ) {
-    return String(payload.data);
+    return normalizarTimestamp(
+      data
+    );
   }
 
   return new Date().toISOString();
@@ -240,6 +611,7 @@ function getStatus(
     | SensorData
     | FingerprintData
 ): string {
+
   return String(
     payload.status ??
       payload.estado ??
@@ -256,6 +628,7 @@ function getStatus(
 function getMessage(
   payload: FingerprintData
 ): string {
+
   return String(
     payload.message ??
       payload.mensagem ??
@@ -264,12 +637,13 @@ function getMessage(
 }
 
 /* ============================================================
-   STATUS DE RECONHECIMENTO
+   STATUS RECONHECIDO
 ============================================================ */
 
 function isRecognizedStatus(
   status: string
 ): boolean {
+
   return [
     "recognized",
     "recognised",
@@ -289,12 +663,13 @@ function isRecognizedStatus(
 }
 
 /* ============================================================
-   STATUS NÃO IDENTIFICADO
+   STATUS NEGADO
 ============================================================ */
 
 function isDeniedStatus(
   status: string
 ): boolean {
+
   return [
     "denied",
     "negado",
@@ -315,12 +690,13 @@ function isDeniedStatus(
 }
 
 /* ============================================================
-   STATUS DE CADASTRO
+   STATUS CADASTRO
 ============================================================ */
 
 function isEnrollmentStatus(
   status: string
 ): boolean {
+
   return [
     "enrolling",
     "enroll",
@@ -341,6 +717,7 @@ function isEnrollmentStatus(
 function isRemoveFingerStatus(
   status: string
 ): boolean {
+
   return [
     "remove",
     "removed",
@@ -366,6 +743,7 @@ function isRemoveFingerStatus(
 function isRegisteredStatus(
   status: string
 ): boolean {
+
   return [
     "registered",
     "registado",
@@ -384,6 +762,7 @@ function isRegisteredStatus(
 function isErrorStatus(
   status: string
 ): boolean {
+
   return [
     "error",
     "erro",
@@ -395,6 +774,152 @@ function isErrorStatus(
     "erro_busca",
     "timeout",
   ].includes(status);
+}
+
+/* ============================================================
+   NORMALIZAR HISTÓRICO 1
+============================================================ */
+
+function normalizarHistorico1(
+  dados: unknown
+): WeighingSensor1[] {
+
+  if (
+    !Array.isArray(dados)
+  ) {
+
+    return [];
+  }
+
+  return dados
+    .filter(isObject)
+    .map(
+      (
+        item
+      ) => {
+
+        const timestamp =
+          normalizarTimestamp(
+            item.timestamp ??
+              item.dataHora ??
+              item.data_hora ??
+              item.date ??
+              item.createdAt
+          );
+
+        return {
+          ...item,
+
+          id:
+            String(
+              item.id ??
+                gerarId(
+                  "balanca1"
+                )
+            ),
+
+          product:
+            String(
+              item.product ??
+                item.produto ??
+                ""
+            ),
+
+          weight:
+            Number(
+              item.weight ??
+                item.peso ??
+                0
+            ),
+
+          status:
+            String(
+              item.status ??
+                "confirmado"
+            ),
+
+          timestamp,
+
+          dataHora:
+            formatDateTime(
+              timestamp
+            ),
+        } as WeighingSensor1;
+      }
+    );
+}
+
+/* ============================================================
+   NORMALIZAR HISTÓRICO 2
+============================================================ */
+
+function normalizarHistorico2(
+  dados: unknown
+): WeighingSensor2[] {
+
+  if (
+    !Array.isArray(dados)
+  ) {
+
+    return [];
+  }
+
+  return dados
+    .filter(isObject)
+    .map(
+      (
+        item
+      ) => {
+
+        const timestamp =
+          normalizarTimestamp(
+            item.timestamp ??
+              item.dataHora ??
+              item.data_hora ??
+              item.date ??
+              item.createdAt
+          );
+
+        return {
+          ...item,
+
+          id:
+            String(
+              item.id ??
+                gerarId(
+                  "balanca2"
+                )
+            ),
+
+          product:
+            String(
+              item.product ??
+                item.produto ??
+                ""
+            ),
+
+          weight:
+            Number(
+              item.weight ??
+                item.peso ??
+                0
+            ),
+
+          status:
+            String(
+              item.status ??
+                "confirmado"
+            ),
+
+          timestamp,
+
+          dataHora:
+            formatDateTime(
+              timestamp
+            ),
+        } as WeighingSensor2;
+      }
+    );
 }
 
 /* ============================================================
@@ -453,14 +978,14 @@ export function useArmazemMqtt() {
   ] = useState(false);
 
   /* ==========================================================
-     BALANÇA 2 - ESTADO ANTERIOR
+     BALANÇA 2
   ========================================================== */
 
   const pesoAnteriorBalanca2Ref =
     useRef<number | null>(null);
 
   const ultimoHistoricoAutomaticoBalanca2Ref =
-    useRef<string>("");
+    useRef("");
 
   /* ==========================================================
      CONFIRMAÇÃO
@@ -493,22 +1018,16 @@ export function useArmazemMqtt() {
   const [
     fingerprintIdAtual,
     setFingerprintIdAtual,
-  ] = useState<number | undefined>(
-    undefined
-  );
+  ] = useState<number | undefined>();
 
   /* ==========================================================
-     PESSOA ATUAL
+     PESSOA
   ========================================================== */
 
   const [
     pessoaAtual,
     setPessoaAtual,
   ] = useState<Person | null>(null);
-
-  /* ==========================================================
-     PESSOAS CADASTRADAS
-  ========================================================== */
 
   const [
     pessoas,
@@ -519,11 +1038,12 @@ export function useArmazemMqtt() {
     useRef<Person[]>([]);
 
   useEffect(() => {
-    pessoasRef.current = pessoas;
+    pessoasRef.current =
+      pessoas;
   }, [pessoas]);
 
   /* ==========================================================
-     HISTÓRICO BALANÇA 1
+     HISTÓRICO 1
   ========================================================== */
 
   const [
@@ -531,14 +1051,20 @@ export function useArmazemMqtt() {
     setHistoricoSensor1,
   ] = useState<WeighingSensor1[]>([]);
 
+  const historicoSensor1Ref =
+    useRef<WeighingSensor1[]>([]);
+
   /* ==========================================================
-     HISTÓRICO BALANÇA 2
+     HISTÓRICO 2
   ========================================================== */
 
   const [
     historicoSensor2,
     setHistoricoSensor2,
   ] = useState<WeighingSensor2[]>([]);
+
+  const historicoSensor2Ref =
+    useRef<WeighingSensor2[]>([]);
 
   /* ==========================================================
      HISTÓRICO FINGERPRINT
@@ -551,6 +1077,20 @@ export function useArmazemMqtt() {
 
   const historicoFingerprintRef =
     useRef<FingerprintHistory[]>([]);
+
+  /* ==========================================================
+     ATUALIZAR REFS
+  ========================================================== */
+
+  useEffect(() => {
+    historicoSensor1Ref.current =
+      historicoSensor1;
+  }, [historicoSensor1]);
+
+  useEffect(() => {
+    historicoSensor2Ref.current =
+      historicoSensor2;
+  }, [historicoSensor2]);
 
   useEffect(() => {
     historicoFingerprintRef.current =
@@ -596,7 +1136,10 @@ export function useArmazemMqtt() {
   ========================================================== */
 
   useEffect(() => {
-    produtoRef.current = produto;
+
+    produtoRef.current =
+      produto;
+
   }, [produto]);
 
   /* ==========================================================
@@ -604,76 +1147,218 @@ export function useArmazemMqtt() {
   ========================================================== */
 
   useEffect(() => {
+
+    /*
+     * IMPORTANTE:
+     *
+     * Este effect roda antes dos effects de gravação.
+     *
+     * Depois de carregar tudo:
+     *
+     * historicoInicializadoRef.current = true
+     *
+     * Só então permitimos salvar.
+     */
+
     try {
 
       const pessoasSalvas =
         localStorage.getItem(
-          "armazem_pessoas"
+          STORAGE_PESSOAS
         );
 
-      const historico1 =
+      const historico1Salvo =
         localStorage.getItem(
-          "armazem_historico_sensor1"
+          STORAGE_HISTORICO_1
         );
 
-      const historico2 =
+      const historico2Salvo =
         localStorage.getItem(
-          "armazem_historico_sensor2"
+          STORAGE_HISTORICO_2
         );
 
-      const historicoFingerprintSalvo =
+      const fingerprintSalvo =
         localStorage.getItem(
-          "armazem_historico_fingerprint"
+          STORAGE_HISTORICO_FINGERPRINT
         );
 
-      if (pessoasSalvas) {
+      /* ======================================================
+         PESSOAS
+      ====================================================== */
 
-        const dados =
-          JSON.parse(
-            pessoasSalvas
+      if (
+        pessoasSalvas
+      ) {
+
+        try {
+
+          const dados =
+            JSON.parse(
+              pessoasSalvas
+            );
+
+          if (
+            Array.isArray(dados)
+          ) {
+
+            setPessoas(
+              dados
+            );
+
+            pessoasRef.current =
+              dados;
+          }
+
+        } catch (error) {
+
+          console.error(
+            "Erro ao carregar pessoas:",
+            error
           );
-
-        if (Array.isArray(dados)) {
-          setPessoas(dados);
-          pessoasRef.current = dados;
         }
       }
 
-      if (historico1) {
+      /* ======================================================
+         HISTÓRICO BALANÇA 1
+      ====================================================== */
 
-        const dados =
-          JSON.parse(
-            historico1
+      if (
+        historico1Salvo
+      ) {
+
+        try {
+
+          const dados =
+            JSON.parse(
+              historico1Salvo
+            );
+
+          const normalizados =
+            normalizarHistorico1(
+              dados
+            );
+
+          setHistoricoSensor1(
+            normalizados
           );
 
-        if (Array.isArray(dados)) {
-          setHistoricoSensor1(dados);
+          historicoSensor1Ref.current =
+            normalizados;
+
+          console.log(
+            `Histórico Balança 1 carregado: ${normalizados.length} registros.`
+          );
+
+        } catch (error) {
+
+          console.error(
+            "Erro ao carregar histórico da Balança 1:",
+            error
+          );
         }
       }
 
-      if (historico2) {
+      /* ======================================================
+         HISTÓRICO BALANÇA 2
+      ====================================================== */
 
-        const dados =
-          JSON.parse(
-            historico2
+      if (
+        historico2Salvo
+      ) {
+
+        try {
+
+          const dados =
+            JSON.parse(
+              historico2Salvo
+            );
+
+          const normalizados =
+            normalizarHistorico2(
+              dados
+            );
+
+          setHistoricoSensor2(
+            normalizados
           );
 
-        if (Array.isArray(dados)) {
-          setHistoricoSensor2(dados);
+          historicoSensor2Ref.current =
+            normalizados;
+
+        } catch (error) {
+
+          console.error(
+            "Erro ao carregar histórico da Balança 2:",
+            error
+          );
         }
       }
 
-      if (historicoFingerprintSalvo) {
+      /* ======================================================
+         FINGERPRINT
+      ====================================================== */
 
-        const dados =
-          JSON.parse(
-            historicoFingerprintSalvo
+      if (
+        fingerprintSalvo
+      ) {
+
+        try {
+
+          const dados =
+            JSON.parse(
+              fingerprintSalvo
+            );
+
+          if (
+            Array.isArray(dados)
+          ) {
+
+            const normalizados =
+              dados.map(
+                (
+                  item: FingerprintHistory
+                ) => {
+
+                  const timestamp =
+                    normalizarTimestamp(
+                      item.timestamp
+                    );
+
+                  return {
+                    ...item,
+
+                    id:
+                      String(
+                        item.id ??
+                          gerarId(
+                            "fingerprint"
+                          )
+                      ),
+
+                    timestamp,
+
+                    dataHora:
+                      formatDateTime(
+                        timestamp
+                      ),
+                  };
+                }
+              );
+
+            setHistoricoFingerprint(
+              normalizados
+            );
+
+            historicoFingerprintRef.current =
+              normalizados;
+          }
+
+        } catch (error) {
+
+          console.error(
+            "Erro ao carregar histórico fingerprint:",
+            error
           );
-
-        if (Array.isArray(dados)) {
-          setHistoricoFingerprint(dados);
-          historicoFingerprintRef.current =
-            dados;
         }
       }
 
@@ -687,7 +1372,16 @@ export function useArmazemMqtt() {
       setErro(
         "Erro ao carregar dados locais."
       );
+
+    } finally {
+
+      /*
+       * SOMENTE AGORA permitimos gravação.
+       */
+      historicoInicializadoRef.current =
+        true;
     }
+
   }, []);
 
   /* ==========================================================
@@ -696,11 +1390,19 @@ export function useArmazemMqtt() {
 
   useEffect(() => {
 
+    if (
+      !historicoInicializadoRef.current
+    ) {
+      return;
+    }
+
     try {
 
       localStorage.setItem(
-        "armazem_pessoas",
-        JSON.stringify(pessoas)
+        STORAGE_PESSOAS,
+        JSON.stringify(
+          pessoas
+        )
       );
 
     } catch (error) {
@@ -719,13 +1421,24 @@ export function useArmazemMqtt() {
 
   useEffect(() => {
 
+    if (
+      !historicoInicializadoRef.current
+    ) {
+
+      return;
+    }
+
     try {
 
       localStorage.setItem(
-        "armazem_historico_sensor1",
+        STORAGE_HISTORICO_1,
         JSON.stringify(
           historicoSensor1
         )
+      );
+
+      console.log(
+        `Histórico Balança 1 guardado: ${historicoSensor1.length} registros.`
       );
 
     } catch (error) {
@@ -744,10 +1457,17 @@ export function useArmazemMqtt() {
 
   useEffect(() => {
 
+    if (
+      !historicoInicializadoRef.current
+    ) {
+
+      return;
+    }
+
     try {
 
       localStorage.setItem(
-        "armazem_historico_sensor2",
+        STORAGE_HISTORICO_2,
         JSON.stringify(
           historicoSensor2
         )
@@ -764,15 +1484,22 @@ export function useArmazemMqtt() {
   }, [historicoSensor2]);
 
   /* ==========================================================
-     GUARDAR HISTÓRICO FINGERPRINT
+     GUARDAR FINGERPRINT
   ========================================================== */
 
   useEffect(() => {
 
+    if (
+      !historicoInicializadoRef.current
+    ) {
+
+      return;
+    }
+
     try {
 
       localStorage.setItem(
-        "armazem_historico_fingerprint",
+        STORAGE_HISTORICO_FINGERPRINT,
         JSON.stringify(
           historicoFingerprint
         )
@@ -789,49 +1516,34 @@ export function useArmazemMqtt() {
   }, [historicoFingerprint]);
 
   /* ==========================================================
-     CONEXÃO MQTT
+     MQTT
   ========================================================== */
 
   useEffect(() => {
 
     let mounted = true;
 
-    console.log(
-      "================================"
-    );
-
-    console.log(
-      "INICIANDO MQTT DO ARMAZÉM"
-    );
-
-    console.log(
-      "URL MQTT:",
-      process.env.NEXT_PUBLIC_MQTT_URL
-    );
-
-    console.log(
-      "================================"
-    );
-
     const client =
       connectMqtt({
 
-        onStatus: (status) => {
+        onStatus: (
+          status
+        ) => {
 
-          if (!mounted) {
+          if (
+            !mounted
+          ) {
             return;
           }
-
-          console.log(
-            "STATUS MQTT:",
-            status
-          );
 
           if (
             status === "Online"
           ) {
 
-            setMqttOnline(true);
+            setMqttOnline(
+              true
+            );
+
             setErro("");
 
             return;
@@ -841,26 +1553,27 @@ export function useArmazemMqtt() {
             status === "Offline"
           ) {
 
-            setMqttOnline(false);
+            setMqttOnline(
+              false
+            );
 
             pesoAnteriorBalanca2Ref.current =
               null;
-
-            return;
           }
         },
 
         onConnect: () => {
 
-          if (!mounted) {
+          if (
+            !mounted
+          ) {
             return;
           }
 
-          console.log(
-            "MQTT CONECTADO COM SUCESSO"
+          setMqttOnline(
+            true
           );
 
-          setMqttOnline(true);
           setErro("");
 
           pesoAnteriorBalanca2Ref.current =
@@ -869,23 +1582,27 @@ export function useArmazemMqtt() {
 
         onDisconnect: () => {
 
-          if (!mounted) {
+          if (
+            !mounted
+          ) {
             return;
           }
 
-          console.log(
-            "MQTT DESCONECTADO"
+          setMqttOnline(
+            false
           );
-
-          setMqttOnline(false);
 
           pesoAnteriorBalanca2Ref.current =
             null;
         },
 
-        onError: (error: Error) => {
+        onError: (
+          error: Error
+        ) => {
 
-          if (!mounted) {
+          if (
+            !mounted
+          ) {
             return;
           }
 
@@ -905,16 +1622,15 @@ export function useArmazemMqtt() {
           data
         ) => {
 
-          if (!mounted) {
+          if (
+            !mounted
+          ) {
             return;
           }
 
-          if (!isObject(data)) {
-
-            console.warn(
-              "Payload MQTT não é objeto:",
-              data
-            );
+          if (
+            !isObject(data)
+          ) {
 
             return;
           }
@@ -962,14 +1678,6 @@ export function useArmazemMqtt() {
             );
 
             if (
-              !Number.isFinite(
-                pesoAtual
-              )
-            ) {
-              return;
-            }
-
-            if (
               pesoAtual <= 0
             ) {
 
@@ -1003,10 +1711,11 @@ export function useArmazemMqtt() {
               BALANCA2_DIFERENCA_MINIMA
             ) {
 
-              const timestamp =
-                getTimestamp(
-                  payload
-                );
+              const {
+                timestamp,
+                dataHora,
+              } =
+                createHistoryTimestamp();
 
               const produtoAtual =
                 getProduct(
@@ -1020,7 +1729,6 @@ export function useArmazemMqtt() {
                   produtoAtual,
                   pesoAnterior.toFixed(3),
                   pesoAtual.toFixed(3),
-                  timestamp,
                 ].join("|");
 
               if (
@@ -1035,9 +1743,9 @@ export function useArmazemMqtt() {
                   WeighingSensor2 = {
 
                   id:
-                    `auto-balanca2-${Date.now()}-${Math.random()
-                      .toString(36)
-                      .slice(2, 9)}`,
+                    gerarId(
+                      "auto-balanca2"
+                    ),
 
                   product:
                     produtoAtual,
@@ -1050,8 +1758,9 @@ export function useArmazemMqtt() {
 
                   timestamp,
 
-                  pesoAnterior:
-                    pesoAnterior,
+                  dataHora,
+
+                  pesoAnterior,
 
                   diferenca,
 
@@ -1059,15 +1768,21 @@ export function useArmazemMqtt() {
                     true,
                 };
 
-                setHistoricoSensor2(
-                  prev => [
+                const novoHistorico =
+                  [
                     registro,
-                    ...prev,
-                  ]
+                    ...historicoSensor2Ref.current,
+                  ];
+
+                historicoSensor2Ref.current =
+                  novoHistorico;
+
+                setHistoricoSensor2(
+                  novoHistorico
                 );
 
                 setMensagem(
-                  `Balança 2 atualizada automaticamente: ${pesoAtual.toFixed(3)} kg.`
+                  `Balança 2 atualizada automaticamente: ${pesoAtual.toFixed(3)} kg em ${dataHora}.`
                 );
 
                 setErro("");
@@ -1092,27 +1807,133 @@ export function useArmazemMqtt() {
             const payload =
               data as SensorData;
 
+            const peso =
+              getNumericWeight(
+                payload
+              );
+
+            const produtoHistorico =
+              getProduct(
+                payload
+              ) ||
+              produtoRef.current ||
+              "Sem produto";
+
+            const timestamp =
+              getTimestamp(
+                payload
+              );
+
+            const dataHora =
+              formatDateTime(
+                timestamp
+              );
+
+            const idRecebido =
+              payload.id;
+
+            /*
+             * Primeiro verifica pelo ID.
+             */
+            if (
+              idRecebido !== undefined &&
+              idRecebido !== null
+            ) {
+
+              const existePorId =
+                historicoSensor1Ref.current.some(
+                  item =>
+                    String(
+                      item.id
+                    ) ===
+                    String(
+                      idRecebido
+                    )
+                );
+
+              if (
+                existePorId
+              ) {
+
+                console.log(
+                  "Histórico Balança 1 já existe pelo ID."
+                );
+
+                return;
+              }
+            }
+
+            /*
+             * Depois verifica duplicação por:
+             *
+             * produto + peso + janela de tempo.
+             */
+            const agora =
+              Date.now();
+
+            const duplicado =
+              historicoSensor1Ref.current.some(
+                item => {
+
+                  const itemTime =
+                    new Date(
+                      item.timestamp
+                    ).getTime();
+
+                  if (
+                    Number.isNaN(
+                      itemTime
+                    )
+                  ) {
+
+                    return false;
+                  }
+
+                  return (
+                    item.product ===
+                      produtoHistorico &&
+                    Math.abs(
+                      Number(
+                        item.weight
+                      ) -
+                        peso
+                    ) < 0.001 &&
+                    Math.abs(
+                      agora -
+                        itemTime
+                    ) <=
+                      HISTORICO_DUPLICADO_JANELA_MS
+                  );
+                }
+              );
+
+            if (
+              duplicado
+            ) {
+
+              console.log(
+                "Histórico Balança 1 duplicado ignorado."
+              );
+
+              return;
+            }
+
             const registro:
               WeighingSensor1 = {
 
               id:
                 String(
-                  payload.id ??
-                    `${Date.now()}-balanca1-${Math.random()
-                      .toString(36)
-                      .slice(2, 9)}`
+                  idRecebido ??
+                    gerarId(
+                      "balanca1"
+                    )
                 ),
 
               product:
-                getProduct(
-                  payload
-                ) ||
-                produtoRef.current,
+                produtoHistorico,
 
               weight:
-                getNumericWeight(
-                  payload
-                ),
+                peso,
 
               status:
                 String(
@@ -1121,30 +1942,27 @@ export function useArmazemMqtt() {
                     "confirmado"
                 ),
 
-              timestamp:
-                getTimestamp(
-                  payload
-                ),
+              timestamp,
+
+              dataHora,
             };
 
+            const novoHistorico =
+              [
+                registro,
+                ...historicoSensor1Ref.current,
+              ];
+
+            historicoSensor1Ref.current =
+              novoHistorico;
+
             setHistoricoSensor1(
-              prev => {
+              novoHistorico
+            );
 
-                if (
-                  prev.some(
-                    item =>
-                      item.id ===
-                      registro.id
-                  )
-                ) {
-                  return prev;
-                }
-
-                return [
-                  registro,
-                  ...prev,
-                ];
-              }
+            console.log(
+              "Novo histórico Balança 1:",
+              registro
             );
 
             return;
@@ -1162,15 +1980,30 @@ export function useArmazemMqtt() {
             const payload =
               data as SensorData;
 
+            const peso =
+              getNumericWeightSensor2(
+                payload
+              );
+
+            const timestamp =
+              getTimestamp(
+                payload
+              );
+
+            const dataHora =
+              formatDateTime(
+                timestamp
+              );
+
             const registro:
               WeighingSensor2 = {
 
               id:
                 String(
                   payload.id ??
-                    `${Date.now()}-balanca2-${Math.random()
-                      .toString(36)
-                      .slice(2, 9)}`
+                    gerarId(
+                      "balanca2"
+                    )
                 ),
 
               product:
@@ -1180,9 +2013,7 @@ export function useArmazemMqtt() {
                 produtoRef.current,
 
               weight:
-                getNumericWeightSensor2(
-                  payload
-                ),
+                peso,
 
               status:
                 String(
@@ -1191,30 +2022,40 @@ export function useArmazemMqtt() {
                     "confirmado"
                 ),
 
-              timestamp:
-                getTimestamp(
-                  payload
-                ),
+              timestamp,
+
+              dataHora,
             };
 
-            setHistoricoSensor2(
-              prev => {
-
-                if (
-                  prev.some(
-                    item =>
-                      item.id ===
-                      registro.id
+            const existe =
+              historicoSensor2Ref.current.some(
+                item =>
+                  String(
+                    item.id
+                  ) ===
+                  String(
+                    registro.id
                   )
-                ) {
-                  return prev;
-                }
+              );
 
-                return [
-                  registro,
-                  ...prev,
-                ];
-              }
+            if (
+              existe
+            ) {
+
+              return;
+            }
+
+            const novoHistorico =
+              [
+                registro,
+                ...historicoSensor2Ref.current,
+              ];
+
+            historicoSensor2Ref.current =
+              novoHistorico;
+
+            setHistoricoSensor2(
+              novoHistorico
             );
 
             return;
@@ -1262,47 +2103,15 @@ export function useArmazemMqtt() {
                 payload
               );
 
+            const dataHora =
+              formatDateTime(
+                timestamp
+              );
+
             const confidence =
               getFingerprintConfidence(
                 payload
               );
-
-            console.log(
-              "================================"
-            );
-
-            console.log(
-              "FINGERPRINT RECEBIDA"
-            );
-
-            console.log(
-              "Status:",
-              status
-            );
-
-            console.log(
-              "Fingerprint ID:",
-              id
-            );
-
-            console.log(
-              "Nome:",
-              nome
-            );
-
-            console.log(
-              "Pessoa ID:",
-              pessoaId
-            );
-
-            console.log(
-              "Confidence:",
-              confidence
-            );
-
-            console.log(
-              "================================"
-            );
 
             if (
               id !== undefined
@@ -1314,7 +2123,7 @@ export function useArmazemMqtt() {
             }
 
             /* =================================================
-               CADASTRO EM ANDAMENTO
+               CADASTRO
             ================================================= */
 
             if (
@@ -1338,7 +2147,7 @@ export function useArmazemMqtt() {
             }
 
             /* =================================================
-               CADASTRO CONCLUÍDO
+               CADASTRADO
             ================================================= */
 
             if (
@@ -1399,14 +2208,15 @@ export function useArmazemMqtt() {
                   }
                 );
 
-                pessoasRef.current = [
-                  ...pessoasRef.current.filter(
-                    pessoa =>
-                      pessoa.id !==
-                      novaPessoa.id
-                  ),
-                  novaPessoa,
-                ];
+                pessoasRef.current =
+                  [
+                    ...pessoasRef.current.filter(
+                      pessoa =>
+                        pessoa.id !==
+                        novaPessoa.id
+                    ),
+                    novaPessoa,
+                  ];
 
                 setPessoaAtual(
                   novaPessoa
@@ -1425,7 +2235,7 @@ export function useArmazemMqtt() {
                 );
 
                 setMensagem(
-                  `${novaPessoa.nome} foi cadastrada com sucesso.`
+                  `${novaPessoa.nome} foi cadastrada com sucesso em ${dataHora}.`
                 );
 
                 setErro("");
@@ -1470,17 +2280,9 @@ export function useArmazemMqtt() {
                     )
                   : undefined;
 
-              /* =================================================
-                 NÃO AUTORIZADA
-              ================================================= */
-
               if (
                 !pessoaEncontrada
               ) {
-
-                console.warn(
-                  "Fingerprint encontrada no ESP32, mas não está cadastrada no localStorage."
-                );
 
                 setPessoaAtual(
                   null
@@ -1503,10 +2305,6 @@ export function useArmazemMqtt() {
                 return;
               }
 
-              /* =================================================
-                 AUTORIZADA
-              ================================================= */
-
               const pessoaFinal =
                 pessoaEncontrada;
 
@@ -1519,61 +2317,115 @@ export function useArmazemMqtt() {
                   pessoaFinal.id
               );
 
-              const registro:
-                FingerprintHistory = {
+              const reconhecimentoDuplicado =
+                historicoFingerprintRef.current.some(
+                  item => {
 
-                id:
-                  `fingerprint-${Date.now()}-${Math.random()
-                    .toString(36)
-                    .slice(2, 10)}`,
+                    if (
+                      Number(
+                        item.fingerprintId
+                      ) !==
+                      Number(
+                        id ??
+                          pessoaFinal.id
+                      )
+                    ) {
 
-                fingerprintId:
-                  id ??
-                  Number(
-                    pessoaFinal.id
-                  ),
+                      return false;
+                    }
 
-                pessoaId:
-                  String(
-                    pessoaFinal.id
-                  ),
+                    const itemTime =
+                      new Date(
+                        item.timestamp
+                      ).getTime();
 
-                pessoaNome:
-                  pessoaFinal.nome,
+                    const atualTime =
+                      new Date(
+                        timestamp
+                      ).getTime();
 
-                confidence:
+                    if (
+                      Number.isNaN(
+                        itemTime
+                      ) ||
+                      Number.isNaN(
+                        atualTime
+                      )
+                    ) {
+
+                      return false;
+                    }
+
+                    return (
+                      Math.abs(
+                        atualTime -
+                          itemTime
+                      ) <
+                      HISTORICO_DUPLICADO_JANELA_MS
+                    );
+                  }
+                );
+
+              if (
+                !reconhecimentoDuplicado
+              ) {
+
+                const registro:
+                  FingerprintHistory = {
+
+                  id:
+                    gerarId(
+                      "fingerprint"
+                    ),
+
+                  fingerprintId:
+                    id ??
+                    Number(
+                      pessoaFinal.id
+                    ),
+
+                  pessoaId:
+                    String(
+                      pessoaFinal.id
+                    ),
+
+                  pessoaNome:
+                    pessoaFinal.nome,
+
                   confidence,
 
-                autorizado:
-                  true,
+                  autorizado:
+                    true,
 
-                status:
                   status,
 
-                mensagem:
-                  message ||
-                  `Uso autorizado por ${pessoaFinal.nome}.`,
+                  mensagem:
+                    message ||
+                    `Uso autorizado por ${pessoaFinal.nome}.`,
 
-                timestamp,
+                  timestamp,
 
-                dispositivo:
-                  payload.device ??
-                  payload.dispositivo ??
-                  "esp32-armazem",
-              };
+                  dataHora,
 
-              setHistoricoFingerprint(
-                prev => [
-                  registro,
-                  ...prev,
-                ]
-              );
+                  dispositivo:
+                    payload.device ??
+                    payload.dispositivo ??
+                    "esp32-armazem",
+                };
 
-              historicoFingerprintRef.current =
-                [
-                  registro,
-                  ...historicoFingerprintRef.current,
-                ];
+                const novoHistorico =
+                  [
+                    registro,
+                    ...historicoFingerprintRef.current,
+                  ];
+
+                historicoFingerprintRef.current =
+                  novoHistorico;
+
+                setHistoricoFingerprint(
+                  novoHistorico
+                );
+              }
 
               setFingerprintStatus(
                 message ||
@@ -1581,52 +2433,13 @@ export function useArmazemMqtt() {
               );
 
               setMensagem(
-                `Uso autorizado: ${pessoaFinal.nome}.`
+                `Uso autorizado: ${pessoaFinal.nome} em ${dataHora}.`
               );
 
               setErro("");
 
-              /*
-               * Mantemos pending=true até o dedo
-               * ser retirado.
-               */
               setFingerprintPending(
                 true
-              );
-
-              console.log(
-                "================================"
-              );
-
-              console.log(
-                "FINGERPRINT AUTORIZADA"
-              );
-
-              console.log(
-                "Pessoa:",
-                pessoaFinal.nome
-              );
-
-              console.log(
-                "Pessoa ID:",
-                pessoaFinal.id
-              );
-
-              console.log(
-                "Fingerprint ID:",
-                id
-              );
-
-              console.log(
-                "NOVO USO REGISTADO:"
-              );
-
-              console.log(
-                registro
-              );
-
-              console.log(
-                "================================"
               );
 
               return;
@@ -1655,7 +2468,7 @@ export function useArmazemMqtt() {
             }
 
             /* =================================================
-               NÃO IDENTIFICADA
+               NEGADO
             ================================================= */
 
             if (
@@ -1688,7 +2501,7 @@ export function useArmazemMqtt() {
             }
 
             /* =================================================
-               AUTORIZADA GENÉRICA
+               AUTORIZADO
             ================================================= */
 
             if (
@@ -1748,7 +2561,7 @@ export function useArmazemMqtt() {
               );
 
               setFingerprintStatus(
-                'Leitura concluída. Inicie uma Nova Pesagem para realizar outra leitura.'
+                "Leitura concluída. Inicie uma Nova Pesagem para realizar outra leitura."
               );
 
               return;
@@ -1764,13 +2577,8 @@ export function useArmazemMqtt() {
               )
             ) {
 
-              if (
-                cadastroFingerprintRef.current
-              ) {
-
-                cadastroFingerprintRef.current =
-                  null;
-              }
+              cadastroFingerprintRef.current =
+                null;
 
               setFingerprintPending(
                 false
@@ -1844,27 +2652,18 @@ export function useArmazemMqtt() {
         },
       });
 
-    /* ========================================================
-       MQTT JÁ CONECTADO
-    ======================================================== */
-
     if (
       client?.connected
     ) {
-      setMqttOnline(true);
-    }
 
-    /* ========================================================
-       LIMPEZA
-    ======================================================== */
+      setMqttOnline(
+        true
+      );
+    }
 
     return () => {
 
       mounted = false;
-
-      console.log(
-        "Desmontando conexão MQTT do armazém."
-      );
 
       pesoAnteriorBalanca2Ref.current =
         null;
@@ -1878,7 +2677,7 @@ export function useArmazemMqtt() {
   }, []);
 
   /* ==========================================================
-     CADASTRAR PESSOA / FINGERPRINT
+     CADASTRAR PESSOA
   ========================================================== */
 
   const cadastrarPessoa =
@@ -2036,7 +2835,7 @@ export function useArmazemMqtt() {
     );
 
   /* ==========================================================
-     INICIAR LEITURA
+     RECONHECIMENTO FINGERPRINT
   ========================================================== */
 
   const iniciarReconhecimentoFingerprint =
@@ -2101,10 +2900,6 @@ export function useArmazemMqtt() {
           return false;
         }
 
-        /* ====================================================
-           CONSUMIR LEITURA NESTA PESAGEM
-        ==================================================== */
-
         setFingerprintLeituraIniciada(
           true
         );
@@ -2130,27 +2925,6 @@ export function useArmazemMqtt() {
         );
 
         setErro("");
-
-        console.log(
-          "================================"
-        );
-
-        console.log(
-          "INICIANDO LEITURA FINGERPRINT"
-        );
-
-        console.log(
-          "Pessoas cadastradas:",
-          pessoasRef.current.length
-        );
-
-        console.log(
-          "LEITURA PERMITIDA: UMA VEZ POR PESAGEM"
-        );
-
-        console.log(
-          "================================"
-        );
 
         const enviado =
           requestFingerprint();
@@ -2182,10 +2956,6 @@ export function useArmazemMqtt() {
         fingerprintLeituraIniciada,
       ]
     );
-
-  /* ==========================================================
-     ALIAS
-  ========================================================== */
 
   const reconhecerFingerprint =
     iniciarReconhecimentoFingerprint;
@@ -2253,10 +3023,6 @@ export function useArmazemMqtt() {
           false
         );
 
-        /*
-         * Fingerprint permanece independente
-         * do produto.
-         */
         setFingerprintPending(
           false
         );
@@ -2334,18 +3100,12 @@ export function useArmazemMqtt() {
           return false;
         }
 
-        /*
-         * Proteção adicional no frontend.
-         *
-         * Evita enviar duas confirmações
-         * da mesma pesagem.
-         */
         if (
           sensor1Confirmado
         ) {
 
           setErro(
-            "A Balança 1 já foi confirmada nesta pesagem. Clique em \"Nova Pesagem\" para confirmar novamente."
+            'A Balança 1 já foi confirmada nesta pesagem. Clique em "Nova Pesagem" para confirmar novamente.'
           );
 
           return false;
@@ -2371,6 +3131,56 @@ export function useArmazemMqtt() {
           return false;
         }
 
+        /*
+         * Criamos o registro imediatamente.
+         */
+        const {
+          timestamp,
+          dataHora,
+        } =
+          createHistoryTimestamp();
+
+        const registro:
+          WeighingSensor1 = {
+
+          id:
+            gerarId(
+              "balanca1"
+            ),
+
+          product:
+            produtoRef.current,
+
+          weight:
+            sensor1,
+
+          status:
+            "confirmado",
+
+          timestamp,
+
+          dataHora,
+        };
+
+        /*
+         * Atualiza REF antes de setState.
+         *
+         * Isso é importante porque history1 pode
+         * chegar quase imediatamente pelo MQTT.
+         */
+        const novoHistorico =
+          [
+            registro,
+            ...historicoSensor1Ref.current,
+          ];
+
+        historicoSensor1Ref.current =
+          novoHistorico;
+
+        setHistoricoSensor1(
+          novoHistorico
+        );
+
         setSensor1Confirmado(
           true
         );
@@ -2380,10 +3190,15 @@ export function useArmazemMqtt() {
         );
 
         setMensagem(
-          `Balança 1 confirmada: ${sensor1.toFixed(3)} kg.`
+          `Balança 1 confirmada: ${sensor1.toFixed(3)} kg em ${dataHora}.`
         );
 
         setErro("");
+
+        console.log(
+          "BALANÇA 1 CONFIRMADA:",
+          registro
+        );
 
         return true;
       },
@@ -2395,7 +3210,7 @@ export function useArmazemMqtt() {
     );
 
   /* ==========================================================
-     CONFIRMAR BALANÇA 2
+     BALANÇA 2
   ========================================================== */
 
   const confirmarBalanca2 =
@@ -2419,10 +3234,6 @@ export function useArmazemMqtt() {
     useCallback(
       () => {
 
-        /* ====================================================
-           MQTT
-        ==================================================== */
-
         if (
           !mqttOnline
         ) {
@@ -2434,12 +3245,6 @@ export function useArmazemMqtt() {
           return false;
         }
 
-        /* ====================================================
-           RESET BALANÇA 1 NO ESP32
-           
-           ESTE É O PONTO PRINCIPAL DA CORREÇÃO.
-        ==================================================== */
-
         const resetEnviado =
           resetSensor1();
 
@@ -2447,20 +3252,12 @@ export function useArmazemMqtt() {
           !resetEnviado
         ) {
 
-          console.error(
-            "Não foi possível enviar reset_sensor1 para o ESP32."
-          );
-
           setErro(
             "Não foi possível reiniciar a Balança 1 no ESP32."
           );
 
           return false;
         }
-
-        /* ====================================================
-           RESET LOCAL — BALANÇAS
-        ==================================================== */
 
         setSensor1(0);
         setSensor2(0);
@@ -2473,30 +3270,15 @@ export function useArmazemMqtt() {
           false
         );
 
-        /* ====================================================
-           RESET BALANÇA 2
-        ==================================================== */
-
         pesoAnteriorBalanca2Ref.current =
           null;
 
         ultimoHistoricoAutomaticoBalanca2Ref.current =
           "";
 
-        /* ====================================================
-           RESET CONFIRMAÇÃO
-        ==================================================== */
-
         setAguardandoConfirmacao(
           false
         );
-
-        /* ====================================================
-           FINGERPRINT
-           
-           Nova Pesagem é o único momento normal
-           que libera novamente o botão.
-        ==================================================== */
 
         setFingerprintLeituraIniciada(
           false
@@ -2516,45 +3298,13 @@ export function useArmazemMqtt() {
           undefined
         );
 
-        /* ====================================================
-           MENSAGENS
-        ==================================================== */
-
         setMensagem(
           "Nova pesagem iniciada. Balança 1 reiniciada e leitura de fingerprint disponível novamente."
         );
 
         setErro("");
 
-        /* ====================================================
-           INICIAR NOVA PESAGEM
-        ==================================================== */
-
         startWeighing();
-
-        console.log(
-          "================================"
-        );
-
-        console.log(
-          "NOVA PESAGEM"
-        );
-
-        console.log(
-          "reset_sensor1 enviado"
-        );
-
-        console.log(
-          "Balança 1 liberada"
-        );
-
-        console.log(
-          "Fingerprint liberada novamente"
-        );
-
-        console.log(
-          "================================"
-        );
 
         return true;
       },
@@ -2635,129 +3385,55 @@ export function useArmazemMqtt() {
 
   return {
 
-    /* ========================================================
-       MQTT
-    ======================================================== */
-
     mqttOnline,
 
-    /* ========================================================
-       PRODUTO
-    ======================================================== */
-
     produto,
-
     setProduto,
 
-    /* ========================================================
-       BALANÇA 1
-    ======================================================== */
-
     sensor1,
-
     sensor1Confirmado,
 
-    /* ========================================================
-       BALANÇA 2
-    ======================================================== */
-
     sensor2,
-
     sensor2Confirmado,
-
-    /* ========================================================
-       CONFIRMAÇÃO
-    ======================================================== */
 
     aguardandoConfirmacao,
 
-    /* ========================================================
-       FINGERPRINT
-    ======================================================== */
-
     fingerprintPending,
-
     fingerprintLeituraIniciada,
-
     fingerprintStatus,
-
     fingerprintIdAtual,
 
-    /* ========================================================
-       PESSOA
-    ======================================================== */
-
     pessoaAtual,
-
     pessoas,
 
-    /* ========================================================
-       HISTÓRICOS
-    ======================================================== */
-
     historicoSensor1,
-
     historicoSensor2,
-
     historicoFingerprint,
 
-    /* ========================================================
-       CADASTRO
-    ======================================================== */
-
     nomeFingerprint,
-
     setNomeFingerprint,
 
     idFingerprint,
-
     setIdFingerprint,
 
-    /* ========================================================
-       MENSAGENS
-    ======================================================== */
-
     mensagem,
-
     erro,
 
     setErro,
-
     setMensagem,
 
-    /* ========================================================
-       FUNÇÕES
-    ======================================================== */
-
     cadastrarPessoa,
-
     cadastrarProduto,
 
     confirmarBalanca1,
-
     confirmarBalanca2,
 
-    /* ========================================================
-       FINGERPRINT
-    ======================================================== */
-
     reconhecerFingerprint,
-
     iniciarReconhecimentoFingerprint,
-
-    /* ========================================================
-       PESAGEM
-    ======================================================== */
 
     novaPesagem,
 
-    /* ========================================================
-       RESET
-    ======================================================== */
-
     resetBalanca1,
-
     resetBalanca2,
   };
 }
-

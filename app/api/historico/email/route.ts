@@ -1,43 +1,30 @@
-
 import { NextResponse } from "next/server";
 import nodemailer from "nodemailer";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-interface HistoricoItem {
+// ============================================================
+// TIPOS
+// ============================================================
+
+interface HistoricoBalanca1 {
   id: string | number;
   product?: string;
   weight: number;
   pessoaNome?: string;
   fingerprintId?: number | string;
   printed?: boolean;
-  timestamp: string;
+  timestamp?: string;
 }
 
-/*
- * ============================================================
- * TRANSPORTADOR DE EMAIL
- * ============================================================
- */
+// ============================================================
+// DATA/HORA DE MOÇAMBIQUE
+// ============================================================
 
-const transporter = nodemailer.createTransport({
-  host: process.env.EMAIL_SMTP_HOST,
-  port: Number(process.env.EMAIL_SMTP_PORT || 587),
-  secure: false,
-  auth: {
-    user: process.env.EMAIL_SMTP_USER,
-    pass: process.env.EMAIL_SMTP_PASSWORD,
-  },
-});
-
-/*
- * ============================================================
- * DATA/HORA DE MOÇAMBIQUE
- * ============================================================
- */
-
-function formatarDataMaputo(data: string | Date): string {
+function formatarDataMaputo(
+  data: string | Date
+): string {
   const dataConvertida = new Date(data);
 
   if (Number.isNaN(dataConvertida.getTime())) {
@@ -48,301 +35,704 @@ function formatarDataMaputo(data: string | Date): string {
     timeZone: "Africa/Maputo",
     calendar: "gregory",
     numberingSystem: "latn",
-
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
-
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
-
     hour12: false,
   }).format(dataConvertida);
 }
 
-/*
- * ============================================================
- * POST
- * ============================================================
- */
+// ============================================================
+// ESCAPAR HTML
+// ============================================================
 
-export async function POST(req: Request) {
+function escaparHTML(
+  valor: unknown
+): string {
+  return String(valor ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+// ============================================================
+// POST
+// ============================================================
+
+export async function POST(
+  req: Request
+) {
+  console.log("");
+  console.log("========================================");
+  console.log("API HISTÓRICO BALANÇA 1");
+  console.log("REQUISIÇÃO RECEBIDA");
+  console.log("========================================");
+
   try {
-    const body = await req.json();
+    // ========================================================
+    // CONFIGURAÇÕES SMTP
+    // ========================================================
 
-    const historico: HistoricoItem[] =
-      body.historico || [];
+    const smtpHost =
+      process.env.EMAIL_SMTP_HOST;
 
-    /*
-     * ========================================================
-     * VALIDAR HISTÓRICO
-     * ========================================================
-     */
+    const smtpPort =
+      Number(
+        process.env.EMAIL_SMTP_PORT || 587
+      );
 
-    if (!Array.isArray(historico)) {
+    const smtpUser =
+      process.env.EMAIL_SMTP_USER;
+
+    const smtpPassword =
+      process.env.EMAIL_SMTP_PASSWORD;
+
+    const destino =
+      process.env.EMAIL_DESTINO;
+
+    const remetente =
+      process.env.EMAIL_REMETENTE;
+
+    console.log(
+      "SMTP HOST:",
+      smtpHost || "NÃO CONFIGURADO"
+    );
+
+    console.log(
+      "SMTP PORT:",
+      smtpPort
+    );
+
+    console.log(
+      "SMTP USER:",
+      smtpUser || "NÃO CONFIGURADO"
+    );
+
+    console.log(
+      "SMTP PASSWORD:",
+      smtpPassword
+        ? "CONFIGURADO"
+        : "NÃO CONFIGURADO"
+    );
+
+    console.log(
+      "EMAIL DESTINO:",
+      destino || "NÃO CONFIGURADO"
+    );
+
+    console.log(
+      "EMAIL REMETENTE:",
+      remetente || "NÃO CONFIGURADO"
+    );
+
+    // ========================================================
+    // VALIDAR CONFIGURAÇÃO
+    // ========================================================
+
+    if (
+      !smtpHost ||
+      !smtpUser ||
+      !smtpPassword ||
+      !destino ||
+      !remetente
+    ) {
+      console.error(
+        "CONFIGURAÇÃO DE EMAIL INCOMPLETA."
+      );
+
       return NextResponse.json(
         {
           sucesso: false,
-          erro: "Histórico inválido.",
+          enviado: false,
+          erro:
+            "Configuração SMTP incompleta. Verifique EMAIL_SMTP_HOST, EMAIL_SMTP_PORT, EMAIL_SMTP_USER, EMAIL_SMTP_PASSWORD, EMAIL_DESTINO e EMAIL_REMETENTE.",
         },
-        { status: 400 }
+        {
+          status: 500,
+        }
       );
     }
 
-    if (historico.length === 0) {
+    // ========================================================
+    // CRIAR TRANSPORTADOR
+    // ========================================================
+
+    const transporter =
+      nodemailer.createTransport({
+        host: smtpHost,
+
+        port: smtpPort,
+
+        secure:
+          smtpPort === 465,
+
+        auth: {
+          user: smtpUser,
+          pass: smtpPassword,
+        },
+
+        connectionTimeout:
+          15000,
+
+        greetingTimeout:
+          15000,
+
+        socketTimeout:
+          20000,
+      });
+
+    // ========================================================
+    // TESTAR SMTP
+    // ========================================================
+
+    console.log(
+      "A verificar conexão SMTP..."
+    );
+
+    await transporter.verify();
+
+    console.log(
+      "SMTP VERIFICADO COM SUCESSO."
+    );
+
+    // ========================================================
+    // RECEBER BODY
+    // ========================================================
+
+    const body =
+      await req.json();
+
+    console.log(
+      "BODY RECEBIDO:"
+    );
+
+    console.log(
+      JSON.stringify(
+        body,
+        null,
+        2
+      )
+    );
+
+    // ========================================================
+    // SOMENTE HISTÓRICO DA BALANÇA 1
+    // ========================================================
+
+    const historico =
+      body?.historico;
+
+    // ========================================================
+    // VALIDAR ARRAY
+    // ========================================================
+
+    if (
+      !Array.isArray(
+        historico
+      )
+    ) {
+      console.error(
+        "O campo historico não é um array."
+      );
+
+      return NextResponse.json(
+        {
+          sucesso: false,
+          enviado: false,
+          erro:
+            "O histórico da Tabela 1 deve ser um array.",
+        },
+        {
+          status: 400,
+        }
+      );
+    }
+
+    console.log(
+      "Registos recebidos:",
+      historico.length
+    );
+
+    // ========================================================
+    // SEM HISTÓRICO
+    // ========================================================
+
+    if (
+      historico.length === 0
+    ) {
+      console.log(
+        "Nenhum registo para enviar."
+      );
+
       return NextResponse.json({
         sucesso: true,
         enviado: false,
-        mensagem: "Não existem registos para enviar.",
+        total: 0,
+        mensagem:
+          "Não existem registos no histórico da Tabela 1.",
       });
     }
 
-    /*
-     * ========================================================
-     * EMAIL
-     * ========================================================
-     */
+    // ========================================================
+    // NORMALIZAR
+    // ========================================================
 
-    const destino = process.env.EMAIL_DESTINO;
-    const remetente = process.env.EMAIL_REMETENTE;
+    const historicoBalanca1:
+      HistoricoBalanca1[] =
+      historico.map(
+        (item: any) => {
 
-    if (!destino || !remetente) {
-      return NextResponse.json(
-        {
-          sucesso: false,
-          erro:
-            "EMAIL_DESTINO ou EMAIL_REMETENTE não configurado.",
-        },
-        { status: 500 }
+          let peso =
+            Number(
+              item?.weight ??
+              item?.peso ??
+              0
+            );
+
+          if (
+            !Number.isFinite(
+              peso
+            )
+          ) {
+            peso = 0;
+          }
+
+          peso =
+            Math.abs(
+              peso
+            );
+
+          return {
+            id:
+              item?.id ??
+              `${Date.now()}-${Math.random()
+                .toString(36)
+                .slice(2)}`,
+
+            product:
+              String(
+                item?.product ??
+                item?.produto ??
+                ""
+              ).trim(),
+
+            weight:
+              peso,
+
+            pessoaNome:
+              String(
+                item?.pessoaNome ??
+                item?.pessoa_nome ??
+                ""
+              ).trim(),
+
+            fingerprintId:
+              item?.fingerprintId ??
+              item?.fingerprint_id ??
+              "",
+
+            printed:
+              Boolean(
+                item?.printed
+              ),
+
+            timestamp:
+              item?.timestamp ??
+              "",
+          };
+        }
       );
-    }
 
-    /*
-     * ========================================================
-     * DATA/HORA ATUAL
-     * ========================================================
-     */
+    console.log(
+      "Histórico Balança 1 normalizado:",
+      historicoBalanca1.length
+    );
 
-    const agora = new Date();
+    // ========================================================
+    // DATA/HORA
+    // ========================================================
 
-    const dataUTC = agora.toISOString();
+    const agora =
+      new Date();
 
-    const dataMaputo = formatarDataMaputo(agora);
+    const dataUTC =
+      agora.toISOString();
 
-    /*
-     * LOG PARA VERIFICAR A HORA REAL DA VERCEL
-     */
+    const dataMaputo =
+      formatarDataMaputo(
+        agora
+      );
 
-    console.log("========================================");
-    console.log("TESTE DE DATA/HORA");
-    console.log("UTC:", dataUTC);
-    console.log("MAPUTO:", dataMaputo);
-    console.log("========================================");
+    // ========================================================
+    // LINHAS HTML
+    // ========================================================
 
-    /*
-     * ========================================================
-     * LINHAS DA TABELA
-     * ========================================================
-     */
+    const linhas =
+      historicoBalanca1
+        .map(
+          (item) => {
 
-    const linhas = historico
-      .map(
-        (item) => `
-          <tr>
-            <td>${item.product || "-"}</td>
+            const dataRegistro =
+              item.timestamp
+                ? formatarDataMaputo(
+                    item.timestamp
+                  )
+                : "Data indisponível";
 
-            <td>
-              ${Number(item.weight || 0).toFixed(2)} kg
-            </td>
+            return `
+              <tr>
+                <td>
+                  ${escaparHTML(
+                    item.product || "-"
+                  )}
+                </td>
 
-            <td>
-              ${item.pessoaNome || "-"}
-            </td>
+                <td>
+                  ${item.weight.toFixed(2)} kg
+                </td>
 
-            <td>
-              ${item.fingerprintId ?? "-"}
-            </td>
+                <td>
+                  ${escaparHTML(
+                    item.pessoaNome || "-"
+                  )}
+                </td>
 
-            <td>
-              ${
-                item.printed
-                  ? "Impresso"
-                  : "Não impresso"
-              }
-            </td>
+                <td>
+                  ${escaparHTML(
+                    item.fingerprintId || "-"
+                  )}
+                </td>
 
-            <td>
-              ${formatarDataMaputo(item.timestamp)}
-            </td>
-          </tr>
-        `
-      )
-      .join("");
+                <td>
+                  ${
+                    item.printed
+                      ? "Impresso"
+                      : "Não impresso"
+                  }
+                </td>
 
-    /*
-     * ========================================================
-     * HTML DO EMAIL
-     * ========================================================
-     */
+                <td>
+                  ${escaparHTML(
+                    dataRegistro
+                  )}
+                </td>
+              </tr>
+            `;
+          }
+        )
+        .join("");
+
+    // ========================================================
+    // HTML
+    // ========================================================
 
     const html = `
       <!DOCTYPE html>
 
       <html lang="pt">
-        <head>
-          <meta charset="UTF-8" />
 
-          <style>
-            body {
-              font-family: Arial, sans-serif;
-              background: #f5f7fa;
-              padding: 30px;
-              color: #001431;
-            }
+      <head>
 
-            .container {
-              max-width: 1000px;
-              margin: auto;
-              background: white;
-              padding: 30px;
-              border-radius: 12px;
-            }
+        <meta charset="UTF-8">
 
-            h1 {
-              color: #001431;
-            }
+        <meta
+          name="viewport"
+          content="width=device-width, initial-scale=1.0"
+        >
 
-            .info {
-              margin-bottom: 20px;
-              color: #666;
-            }
+        <title>
+          Histórico Balança 1
+        </title>
 
-            table {
-              width: 100%;
-              border-collapse: collapse;
-            }
+        <style>
 
-            th {
-              background: #001431;
-              color: white;
-              padding: 10px;
-              text-align: left;
-            }
+          body {
+            font-family:
+              Arial,
+              Helvetica,
+              sans-serif;
 
-            td {
-              padding: 10px;
-              border-bottom: 1px solid #ddd;
-            }
+            background:
+              #f5f7fa;
 
-            .total {
-              margin-top: 20px;
-              font-weight: bold;
-              font-size: 16px;
-            }
-          </style>
-        </head>
+            padding:
+              30px;
 
-        <body>
+            color:
+              #001431;
+          }
 
-          <div class="container">
+          .container {
+            max-width:
+              1000px;
 
-            <h1>
-              Histórico — Balança 1
-            </h1>
+            margin:
+              auto;
 
-            <div class="info">
+            background:
+              white;
 
-              <p>
-                Relatório automático do sistema
-                de armazém.
-              </p>
+            padding:
+              30px;
 
-              <p>
-                Data do envio:
-                ${dataMaputo}
-              </p>
+            border-radius:
+              12px;
+          }
 
-              <p>
-                Total de registos:
-                ${historico.length}
-              </p>
+          h1 {
+            color:
+              #001431;
+          }
 
-            </div>
+          .info {
+            margin-bottom:
+              20px;
 
-            <table>
+            color:
+              #666;
+          }
 
-              <thead>
-                <tr>
-                  <th>Produto</th>
-                  <th>Peso</th>
-                  <th>Pessoa</th>
-                  <th>Fingerprint</th>
-                  <th>Impressão</th>
-                  <th>Data</th>
-                </tr>
-              </thead>
+          .origem {
+            display:
+              inline-block;
 
-              <tbody>
-                ${linhas}
-              </tbody>
+            padding:
+              6px 10px;
 
-            </table>
+            border-radius:
+              6px;
 
-            <div class="total">
-              Total de registos enviados:
-              ${historico.length}
-            </div>
+            background:
+              #eef2f7;
+
+            font-weight:
+              bold;
+          }
+
+          table {
+            width:
+              100%;
+
+            border-collapse:
+              collapse;
+          }
+
+          th {
+            background:
+              #001431;
+
+            color:
+              white;
+
+            padding:
+              10px;
+
+            text-align:
+              left;
+          }
+
+          td {
+            padding:
+              10px;
+
+            border-bottom:
+              1px solid #ddd;
+          }
+
+          .total {
+            margin-top:
+              20px;
+
+            font-weight:
+              bold;
+
+            font-size:
+              16px;
+          }
+
+        </style>
+
+      </head>
+
+      <body>
+
+        <div class="container">
+
+          <h1>
+            Histórico — Balança 1
+          </h1>
+
+          <div class="info">
+
+            <p>
+              Relatório automático do
+              Sistema de Armazém.
+            </p>
+
+            <p>
+              <span class="origem">
+                Tabela 1 — Balança 1
+              </span>
+            </p>
+
+            <p>
+              Data do envio:
+              ${dataMaputo}
+            </p>
+
+            <p>
+              Total de registos:
+              ${historicoBalanca1.length}
+            </p>
 
           </div>
 
-        </body>
+          <table>
+
+            <thead>
+
+              <tr>
+                <th>Produto</th>
+                <th>Peso</th>
+                <th>Pessoa</th>
+                <th>Fingerprint</th>
+                <th>Impressão</th>
+                <th>Data</th>
+              </tr>
+
+            </thead>
+
+            <tbody>
+
+              ${linhas}
+
+            </tbody>
+
+          </table>
+
+          <div class="total">
+
+            Total de registos enviados:
+            ${historicoBalanca1.length}
+
+          </div>
+
+        </div>
+
+      </body>
+
       </html>
     `;
 
-    /*
-     * ========================================================
-     * ENVIAR EMAIL
-     * ========================================================
-     */
+    // ========================================================
+    // ENVIO
+    // ========================================================
 
-    const resultado = await transporter.sendMail({
-      from: `"Sistema de Armazém" <${remetente}>`,
-      to: destino,
-      subject:
-        `Histórico Balança 1 — ${historico.length} registos`,
-      html,
-    });
+    console.log(
+      "A enviar email..."
+    );
 
-    /*
-     * ========================================================
-     * RESPOSTA
-     * ========================================================
-     */
+    console.log(
+      "FROM:",
+      remetente
+    );
+
+    console.log(
+      "TO:",
+      destino
+    );
+
+    const resultado =
+      await transporter.sendMail({
+
+        from:
+          `"Sistema de Armazém" <${remetente}>`,
+
+        to:
+          destino,
+
+        subject:
+          `Histórico Balança 1 — ${historicoBalanca1.length} registos`,
+
+        html,
+      });
+
+    // ========================================================
+    // SUCESSO
+    // ========================================================
+
+    console.log(
+      "========================================"
+    );
+
+    console.log(
+      "EMAIL ENVIADO COM SUCESSO"
+    );
+
+    console.log(
+      "Message ID:",
+      resultado.messageId
+    );
+
+    console.log(
+      "========================================"
+    );
 
     return NextResponse.json({
       sucesso: true,
+
       enviado: true,
-      total: historico.length,
+
+      origem:
+        "Tabela 1 — Balança 1",
+
+      total:
+        historicoBalanca1.length,
+
       dataUTC,
+
       dataMaputo,
-      messageId: resultado.messageId,
+
+      messageId:
+        resultado.messageId,
     });
 
   } catch (error) {
 
     console.error(
-      "Erro ao enviar histórico:",
+      "========================================"
+    );
+
+    console.error(
+      "ERRO AO ENVIAR EMAIL"
+    );
+
+    console.error(
       error
+    );
+
+    console.error(
+      "========================================"
     );
 
     return NextResponse.json(
       {
         sucesso: false,
+
+        enviado: false,
+
         erro:
-          "Erro interno ao enviar histórico.",
+          error instanceof Error
+            ? error.message
+            : "Erro interno ao enviar histórico da Tabela 1.",
       },
-      { status: 500 }
+      {
+        status: 500,
+      }
     );
   }
 }

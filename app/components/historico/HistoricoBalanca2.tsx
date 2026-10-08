@@ -1,14 +1,14 @@
 "use client";
 
 import type {
-  WeighingSensor2,
+  WeighingSensor1,
 } from "../../types/armazem";
 
 interface Props {
-  historico: WeighingSensor2[];
+  historico: WeighingSensor1[];
 }
 
-export default function HistoricoBalanca2({
+export default function HistoricoBalanca1({
   historico,
 }: Props) {
   return (
@@ -40,8 +40,7 @@ export default function HistoricoBalanca2({
           </thead>
 
           <tbody>
-            {historico.length ===
-            0 ? (
+            {historico.length === 0 ? (
               <tr>
                 <td
                   colSpan={4}
@@ -51,38 +50,30 @@ export default function HistoricoBalanca2({
                 </td>
               </tr>
             ) : (
-              historico.map(
-                (item) => (
-                  <tr
-                    key={item.id}
-                    className="border-b border-gray-100"
-                  >
-                    <td className="p-3">
-                      {item.product ||
-                        "-"}
-                    </td>
+              historico.map((item) => (
+                <tr
+                  key={item.id}
+                  className="border-b border-gray-100"
+                >
+                  <td className="p-3">
+                    {item.product || "-"}
+                  </td>
 
-                    <td className="p-3 font-semibold">
-                      {item.weight.toFixed(
-                        2
-                      )}{" "}
-                      kg
-                    </td>
+                  <td className="p-3 font-semibold">
+                    {item.weight.toFixed(2)} kg
+                  </td>
 
-                    <td className="p-3">
-                      {item.status}
-                    </td>
+                  <td className="p-3">
+                    {item.status}
+                  </td>
 
-                    <td className="p-3">
-                      {new Date(
-                        item.timestamp
-                      ).toLocaleString(
-                        "pt-MZ"
-                      )}
-                    </td>
-                  </tr>
-                )
-              )
+                  <td className="p-3">
+                    {new Date(
+                      item.timestamp
+                    ).toLocaleString("pt-MZ")}
+                  </td>
+                </tr>
+              ))
             )}
           </tbody>
         </table>

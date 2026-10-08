@@ -1,3 +1,4 @@
+"use client";
 
 import mqtt, {
   MqttClient,
@@ -67,16 +68,24 @@ export interface SensorPayload {
   produto_nome?: string;
   product?: string;
 
-  timestamp?: string;
-  data?: string;
-  data_hora?: string;
+  timestamp?: number | string | null;
+
+  data?: string | null;
+
+  hora?: string | null;
+
+  data_hora?: string | null;
+
+  dataHora?: string | null;
 
   stable?: boolean;
+
   occupied?: boolean;
 
   confirmado?: boolean;
 
   estado?: string;
+
   status?: string;
 
   printed?: boolean;
@@ -123,11 +132,15 @@ export interface FingerprintPayload {
 
   confianca?: number | string | null;
 
-  timestamp?: string | null;
+  timestamp?: number | string | null;
 
   data?: string | null;
 
+  hora?: string | null;
+
   data_hora?: string | null;
+
+  dataHora?: string | null;
 
   autorizado?: boolean;
 
@@ -136,6 +149,10 @@ export interface FingerprintPayload {
   encontrado?: boolean;
 
   printed?: boolean;
+
+  device?: string;
+
+  dispositivo?: string;
 }
 
 /* ============================================================
@@ -187,6 +204,12 @@ export interface WeighingHistoryPayload {
 
   difference?: number | string | null;
 
+  peso_anterior?: number | string | null;
+
+  peso_atual?: number | string | null;
+
+  automatico?: boolean;
+
   status?: string;
 
   estado?: string;
@@ -195,13 +218,17 @@ export interface WeighingHistoryPayload {
 
   printed?: boolean;
 
-  timestamp?: string;
+  timestamp?: number | string | null;
 
-  data?: string;
+  data?: string | null;
 
-  data_hora?: string;
+  hora?: string | null;
 
-  date?: string;
+  data_hora?: string | null;
+
+  dataHora?: string | null;
+
+  date?: string | null;
 
   pessoa_id?: number | string | null;
 
@@ -232,6 +259,10 @@ export interface Balanca2AutomaticHistoryPayload
   peso_atual: number;
 
   difference: number;
+
+  timestamp: number;
+
+  dataHora: string;
 }
 
 /* ============================================================
@@ -239,20 +270,11 @@ export interface Balanca2AutomaticHistoryPayload
 ============================================================ */
 
 export const MQTT_TOPICS = {
-
-  /* ==========================================================
-     PESO EM TEMPO REAL
-  ========================================================== */
-
   weight1:
     "armazem/esp32/peso/1",
 
   weight2:
     "armazem/esp32/peso/2",
-
-  /* ==========================================================
-     HISTÓRICO
-  ========================================================== */
 
   history1:
     "armazem/esp32/pesagem/historico/1",
@@ -260,30 +282,14 @@ export const MQTT_TOPICS = {
   history2:
     "armazem/esp32/pesagem/historico/2",
 
-  /* ==========================================================
-     FINGERPRINT
-  ========================================================== */
-
   fingerprint:
     "armazem/esp32/fingerprint",
-
-  /* ==========================================================
-     IMPRESSORA
-  ========================================================== */
 
   printerStatus:
     "armazem/esp32/printer/status",
 
-  /* ==========================================================
-     STATUS GERAL
-  ========================================================== */
-
   status:
     "armazem/esp32/status",
-
-  /* ==========================================================
-     COMANDOS
-  ========================================================== */
 
   command:
     "armazem/esp32/comando",
@@ -307,20 +313,6 @@ let mqttSubscriptionsReady = false;
 /* ============================================================
    ESTADO ANTERIOR BALANÇA 2
 ============================================================ */
-
-/*
-   Esta variável guarda o último peso que foi considerado
-   como estado de referência.
-
-   IMPORTANTE:
-
-   Não alteramos esta variável em pequenas oscilações
-   <= 1 kg.
-
-   Só alteramos quando:
-
-      diferença > 1 kg
-*/
 
 let pesoAnteriorBalanca2:
   number | null = null;
@@ -346,22 +338,16 @@ let currentHandlers:
 function notifyStatus(
   status: string
 ): void {
-
   try {
-
     currentHandlers.onStatus?.(
       status
     );
-
   } catch (error) {
-
     console.error(
       "Erro no handler de status MQTT:",
       error
     );
-
   }
-
 }
 
 /* ============================================================
@@ -369,20 +355,14 @@ function notifyStatus(
 ============================================================ */
 
 function notifyConnect(): void {
-
   try {
-
     currentHandlers.onConnect?.();
-
   } catch (error) {
-
     console.error(
       "Erro no handler onConnect:",
       error
     );
-
   }
-
 }
 
 /* ============================================================
@@ -390,20 +370,14 @@ function notifyConnect(): void {
 ============================================================ */
 
 function notifyDisconnect(): void {
-
   try {
-
     currentHandlers.onDisconnect?.();
-
   } catch (error) {
-
     console.error(
       "Erro no handler onDisconnect:",
       error
     );
-
   }
-
 }
 
 /* ============================================================
@@ -413,22 +387,16 @@ function notifyDisconnect(): void {
 function notifyError(
   error: Error
 ): void {
-
   try {
-
     currentHandlers.onError?.(
       error
     );
-
   } catch (handlerError) {
-
     console.error(
       "Erro no handler de erro MQTT:",
       handlerError
     );
-
   }
-
 }
 
 /* ============================================================
@@ -438,22 +406,16 @@ function notifyError(
 function notifyMessageError(
   message: string
 ): void {
-
   try {
-
     currentHandlers.onMessageError?.(
       message
     );
-
   } catch (error) {
-
     console.error(
       "Erro no handler de mensagem MQTT:",
       error
     );
-
   }
-
 }
 
 /* ============================================================
@@ -461,25 +423,15 @@ function notifyMessageError(
 ============================================================ */
 
 function getMqttTopics(): string[] {
-
   return [
-
     MQTT_TOPICS.weight1,
-
     MQTT_TOPICS.weight2,
-
     MQTT_TOPICS.history1,
-
     MQTT_TOPICS.history2,
-
     MQTT_TOPICS.fingerprint,
-
     MQTT_TOPICS.printerStatus,
-
     MQTT_TOPICS.status,
-
   ];
-
 }
 
 /* ============================================================
@@ -489,21 +441,15 @@ function getMqttTopics(): string[] {
 function payloadToString(
   payload: Buffer
 ): string {
-
   try {
-
     return payload.toString(
       "utf8"
     );
-
   } catch {
-
     return String(
       payload
     );
-
   }
-
 }
 
 /* ============================================================
@@ -513,28 +459,483 @@ function payloadToString(
 function parsePayload(
   texto: string
 ): unknown {
-
   const trimmed =
     texto.trim();
 
   if (!trimmed) {
-
     return null;
-
   }
 
   try {
-
     return JSON.parse(
       trimmed
     );
-
   } catch {
-
     return trimmed;
+  }
+}
 
+/* ============================================================
+   FORMATAR DATA/HORA
+============================================================ */
+
+function formatDateTime(
+  timestamp: number
+): string {
+
+  const date =
+    new Date(
+      timestamp
+    );
+
+  if (
+    Number.isNaN(
+      date.getTime()
+    )
+  ) {
+    return "";
   }
 
+  /*
+   * pt-MZ = formato:
+   *
+   * DD/MM/AAAA HH:mm:ss
+   *
+   * Mantemos a hora local do navegador.
+   */
+  return date.toLocaleString(
+    "pt-MZ",
+    {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    }
+  );
+}
+
+/* ============================================================
+   ISO
+============================================================ */
+
+function timestampToIso(
+  timestamp: number
+): string {
+
+  const date =
+    new Date(
+      timestamp
+    );
+
+  if (
+    Number.isNaN(
+      date.getTime()
+    )
+  ) {
+    return new Date().toISOString();
+  }
+
+  return date.toISOString();
+}
+
+/* ============================================================
+   NORMALIZAR TIMESTAMP
+============================================================ */
+
+/*
+   Aceita:
+
+   Unix segundos:
+   1791430938
+
+   Unix milissegundos:
+   1791430938000
+
+   String numérica:
+   "1791430938"
+
+   ISO:
+   "2026-10-08T12:30:00.000Z"
+
+   Data:
+   "2026-10-08 12:30:00"
+
+   Retorna SEMPRE milissegundos.
+*/
+
+function normalizeTimestamp(
+  value: unknown
+): number | undefined {
+
+  if (
+    value === undefined ||
+    value === null ||
+    value === ""
+  ) {
+    return undefined;
+  }
+
+  /* ==========================================================
+     DATE
+  ========================================================== */
+
+  if (
+    value instanceof Date
+  ) {
+
+    const time =
+      value.getTime();
+
+    return Number.isFinite(
+      time
+    )
+      ? time
+      : undefined;
+  }
+
+  /* ==========================================================
+     NUMBER
+  ========================================================== */
+
+  if (
+    typeof value ===
+    "number"
+  ) {
+
+    if (
+      !Number.isFinite(
+        value
+      ) ||
+      value <= 0
+    ) {
+      return undefined;
+    }
+
+    /*
+     * Unix em segundos.
+     */
+    if (
+      value <
+      100000000000
+    ) {
+
+      return Math.round(
+        value * 1000
+      );
+    }
+
+    /*
+     * Unix em milissegundos.
+     */
+    return Math.round(
+      value
+    );
+  }
+
+  /* ==========================================================
+     STRING
+  ========================================================== */
+
+  const texto =
+    String(
+      value
+    ).trim();
+
+  if (!texto) {
+    return undefined;
+  }
+
+  /*
+   * String numérica.
+   */
+  if (
+    /^-?\d+(\.\d+)?$/.test(
+      texto
+    )
+  ) {
+
+    const numero =
+      Number(
+        texto
+      );
+
+    if (
+      !Number.isFinite(
+        numero
+      ) ||
+      numero <= 0
+    ) {
+      return undefined;
+    }
+
+    if (
+      numero <
+      100000000000
+    ) {
+
+      return Math.round(
+        numero * 1000
+      );
+    }
+
+    return Math.round(
+      numero
+    );
+  }
+
+  /*
+   * ISO / data normal.
+   */
+  const parsed =
+    new Date(
+      texto
+    );
+
+  if (
+    Number.isNaN(
+      parsed.getTime()
+    )
+  ) {
+    return undefined;
+  }
+
+  return parsed.getTime();
+}
+
+/* ============================================================
+   EXTRAIR TIMESTAMP DO PAYLOAD
+============================================================ */
+
+function getPayloadTimestamp(
+  payload: Record<
+    string,
+    unknown
+  >
+): number {
+
+  /*
+   * 1. timestamp
+   */
+  const timestamp =
+    normalizeTimestamp(
+      payload.timestamp
+    );
+
+  if (
+    timestamp !== undefined
+  ) {
+    return timestamp;
+  }
+
+  /*
+   * 2. dataHora
+   */
+  const dataHora =
+    payload.dataHora;
+
+  if (
+    dataHora !== undefined &&
+    dataHora !== null &&
+    String(
+      dataHora
+    ).trim()
+  ) {
+
+    const parsed =
+      normalizeTimestamp(
+        dataHora
+      );
+
+    if (
+      parsed !== undefined
+    ) {
+      return parsed;
+    }
+  }
+
+  /*
+   * 3. data_hora
+   */
+  const dataHoraSnake =
+    payload.data_hora;
+
+  if (
+    dataHoraSnake !== undefined &&
+    dataHoraSnake !== null &&
+    String(
+      dataHoraSnake
+    ).trim()
+  ) {
+
+    const parsed =
+      normalizeTimestamp(
+        dataHoraSnake
+      );
+
+    if (
+      parsed !== undefined
+    ) {
+      return parsed;
+    }
+  }
+
+  /*
+   * 4. data + hora
+   */
+  const data =
+    payload.data;
+
+  const hora =
+    payload.hora;
+
+  if (
+    data !== undefined &&
+    data !== null
+  ) {
+
+    const textoData =
+      String(
+        data
+      ).trim();
+
+    const textoHora =
+      hora !== undefined &&
+      hora !== null
+        ? String(
+            hora
+          ).trim()
+        : "";
+
+    const combinado =
+      textoHora
+        ? `${textoData} ${textoHora}`
+        : textoData;
+
+    const parsed =
+      normalizeTimestamp(
+        combinado
+      );
+
+    if (
+      parsed !== undefined
+    ) {
+      return parsed;
+    }
+  }
+
+  /*
+   * 5. Se o ESP32 não mandou data,
+   * usamos o momento em que o MQTT
+   * recebeu o evento.
+   */
+  return Date.now();
+}
+
+/* ============================================================
+   NORMALIZAR DATA DO HISTÓRICO
+============================================================ */
+
+function normalizeHistoryDate(
+  data: unknown
+): unknown {
+
+  if (
+    !data ||
+    typeof data !== "object" ||
+    Array.isArray(data)
+  ) {
+    return data;
+  }
+
+  const original =
+    data as Record<
+      string,
+      unknown
+    >;
+
+  const result = {
+    ...original,
+  };
+
+  /*
+   * IMPORTANTE:
+   *
+   * Sempre cria uma data/hora.
+   */
+  const timestamp =
+    getPayloadTimestamp(
+      result
+    );
+
+  /*
+   * Timestamp interno:
+   * milissegundos.
+   */
+  result.timestamp =
+    timestamp;
+
+  /*
+   * Timestamp ISO.
+   *
+   * Campo adicional para facilitar
+   * persistência e ordenação.
+   */
+  result.timestampIso =
+    timestampToIso(
+      timestamp
+    );
+
+  /*
+   * Data/hora pronta para a tabela.
+   */
+  result.dataHora =
+    formatDateTime(
+      timestamp
+    );
+
+  /*
+   * Também mantemos data_hora
+   * para compatibilidade com o ESP32.
+   */
+  result.data_hora =
+    formatDateTime(
+      timestamp
+    );
+
+  /*
+   * Data separada.
+   */
+  const date =
+    new Date(
+      timestamp
+    );
+
+  result.data =
+    date.toLocaleDateString(
+      "pt-MZ",
+      {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+      }
+    );
+
+  /*
+   * Hora separada.
+   */
+  result.hora =
+    date.toLocaleTimeString(
+      "pt-MZ",
+      {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      }
+    );
+
+  return result;
 }
 
 /* ============================================================
@@ -550,9 +951,7 @@ function normalizeWeight(
     typeof data !== "object" ||
     Array.isArray(data)
   ) {
-
     return data;
-
   }
 
   const original =
@@ -602,81 +1001,15 @@ function normalizeWeight(
         numericWeight;
 
     }
-
   }
 
   return result;
-
-}
-
-/* ============================================================
-   OBTER PESO DA BALANÇA 2
-============================================================ */
-
-export function getBalanca2Weight(
-  data: unknown
-): number | null {
-
-  if (
-    !data ||
-    typeof data !== "object" ||
-    Array.isArray(data)
-  ) {
-
-    return null;
-
-  }
-
-  const payload =
-    data as Record<
-      string,
-      unknown
-    >;
-
-  /*
-     Para o tópico weight2 damos prioridade
-     aos campos específicos da Balança 2.
-  */
-
-  const rawWeight =
-    payload.peso_sensor_2 ??
-    payload.pesoSensor2 ??
-    payload.sensor2 ??
-    payload.peso ??
-    payload.weight ??
-    payload.value;
-
-  if (
-    rawWeight === undefined ||
-    rawWeight === null
-  ) {
-
-    return null;
-
-  }
-
-  const peso =
-    Number(
-      rawWeight
-    );
-
-  if (
-    !Number.isFinite(
-      peso
-    )
-  ) {
-
-    return null;
-
-  }
-
-  return peso;
-
 }
 
 /* ============================================================
    NORMALIZAR FINGERPRINT
 ============================================================ */
+
 function normalizeFingerprint(
   data: unknown
 ): unknown {
@@ -690,20 +1023,18 @@ function normalizeFingerprint(
   }
 
   const original =
-    data as Record<string, unknown>;
+    data as Record<
+      string,
+      unknown
+    >;
 
   const result = {
     ...original,
   };
 
-  /* ----------------------------------------------------------
-     ID DA FINGERPRINT
-     
-     IMPORTANTE:
-     Não utilizar pessoa_id/pessoaId como fallback.
-     O ID da fingerprint e o ID da pessoa são conceitos
-     diferentes.
-  ---------------------------------------------------------- */
+  /* ==========================================================
+     ID FINGERPRINT
+  ========================================================== */
 
   const rawFingerprintId =
     result.fingerprint_id ??
@@ -716,10 +1047,14 @@ function normalizeFingerprint(
   ) {
 
     const numericId =
-      Number(rawFingerprintId);
+      Number(
+        rawFingerprintId
+      );
 
     if (
-      Number.isFinite(numericId)
+      Number.isFinite(
+        numericId
+      )
     ) {
 
       result.id =
@@ -730,15 +1065,12 @@ function normalizeFingerprint(
 
       result.fingerprintId =
         numericId;
-
     }
   }
 
-  /* ----------------------------------------------------------
-     ID DA PESSOA
-     
-     Mantemos separado do ID da fingerprint.
-  ---------------------------------------------------------- */
+  /* ==========================================================
+     ID PESSOA
+  ========================================================== */
 
   const rawPessoaId =
     result.pessoa_id ??
@@ -750,7 +1082,9 @@ function normalizeFingerprint(
   ) {
 
     const pessoaId =
-      String(rawPessoaId).trim();
+      String(
+        rawPessoaId
+      ).trim();
 
     if (pessoaId) {
 
@@ -759,13 +1093,12 @@ function normalizeFingerprint(
 
       result.pessoaId =
         pessoaId;
-
     }
   }
 
-  /* ----------------------------------------------------------
+  /* ==========================================================
      NOME
-  ---------------------------------------------------------- */
+  ========================================================== */
 
   const rawNome =
     result.nome ??
@@ -778,7 +1111,9 @@ function normalizeFingerprint(
   ) {
 
     const nome =
-      String(rawNome).trim();
+      String(
+        rawNome
+      ).trim();
 
     if (nome) {
 
@@ -790,13 +1125,12 @@ function normalizeFingerprint(
 
       result.pessoaNome =
         nome;
-
     }
   }
 
-  /* ----------------------------------------------------------
+  /* ==========================================================
      CONFIANÇA
-  ---------------------------------------------------------- */
+  ========================================================== */
 
   const rawConfidence =
     result.confidence ??
@@ -808,10 +1142,14 @@ function normalizeFingerprint(
   ) {
 
     const confidence =
-      Number(rawConfidence);
+      Number(
+        rawConfidence
+      );
 
     if (
-      Number.isFinite(confidence)
+      Number.isFinite(
+        confidence
+      )
     ) {
 
       result.confidence =
@@ -819,13 +1157,12 @@ function normalizeFingerprint(
 
       result.confianca =
         confidence;
-
     }
   }
 
-  /* ----------------------------------------------------------
+  /* ==========================================================
      STATUS
-  ---------------------------------------------------------- */
+  ========================================================== */
 
   const rawStatus =
     result.status ??
@@ -837,7 +1174,9 @@ function normalizeFingerprint(
   ) {
 
     const status =
-      String(rawStatus).trim();
+      String(
+        rawStatus
+      ).trim();
 
     if (status) {
 
@@ -846,9 +1185,60 @@ function normalizeFingerprint(
 
       result.estado =
         status;
-
     }
   }
+
+  /* ==========================================================
+     TIMESTAMP FINGERPRINT
+  ========================================================== */
+
+  const timestamp =
+    getPayloadTimestamp(
+      result
+    );
+
+  result.timestamp =
+    timestamp;
+
+  result.timestampIso =
+    timestampToIso(
+      timestamp
+    );
+
+  result.dataHora =
+    formatDateTime(
+      timestamp
+    );
+
+  result.data_hora =
+    formatDateTime(
+      timestamp
+    );
+
+  const date =
+    new Date(
+      timestamp
+    );
+
+  result.data =
+    date.toLocaleDateString(
+      "pt-MZ",
+      {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+      }
+    );
+
+  result.hora =
+    date.toLocaleTimeString(
+      "pt-MZ",
+      {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      }
+    );
 
   return result;
 }
@@ -862,6 +1252,26 @@ function normalizeMessage(
   data: unknown
 ): unknown {
 
+  /* ==========================================================
+     HISTÓRICO
+  ========================================================== */
+
+  if (
+    topic ===
+      MQTT_TOPICS.history1 ||
+    topic ===
+      MQTT_TOPICS.history2
+  ) {
+
+    return normalizeHistoryDate(
+      data
+    );
+  }
+
+  /* ==========================================================
+     FINGERPRINT
+  ========================================================== */
+
   if (
     topic ===
     MQTT_TOPICS.fingerprint
@@ -870,58 +1280,83 @@ function normalizeMessage(
     return normalizeFingerprint(
       data
     );
-
   }
+
+  /* ==========================================================
+     PESO
+  ========================================================== */
 
   if (
     topic ===
-    MQTT_TOPICS.weight1 ||
+      MQTT_TOPICS.weight1 ||
     topic ===
-    MQTT_TOPICS.weight2
+      MQTT_TOPICS.weight2
   ) {
 
     return normalizeWeight(
       data
     );
-
   }
 
   return data;
+}
 
+/* ============================================================
+   OBTER PESO BALANÇA 2
+============================================================ */
+
+export function getBalanca2Weight(
+  data: unknown
+): number | null {
+
+  if (
+    !data ||
+    typeof data !== "object" ||
+    Array.isArray(data)
+  ) {
+    return null;
+  }
+
+  const payload =
+    data as Record<
+      string,
+      unknown
+    >;
+
+  const rawWeight =
+    payload.peso_sensor_2 ??
+    payload.pesoSensor2 ??
+    payload.sensor2 ??
+    payload.peso ??
+    payload.weight ??
+    payload.value;
+
+  if (
+    rawWeight === undefined ||
+    rawWeight === null
+  ) {
+    return null;
+  }
+
+  const peso =
+    Number(
+      rawWeight
+    );
+
+  if (
+    !Number.isFinite(
+      peso
+    )
+  ) {
+    return null;
+  }
+
+  return peso;
 }
 
 /* ============================================================
    DETECTAR ALTERAÇÃO BALANÇA 2
 ============================================================ */
-
-/*
-   REGRA:
-
-      primeira leitura
-          ↓
-      guardar peso
-          ↓
-      não criar histórico
-
-
-      leitura seguinte
-          ↓
-      calcular:
-
-      |pesoAtual - pesoAnterior|
-
-
-      diferença <= 1
-          ↓
-      ignorar
-
-
-      diferença > 1
-          ↓
-      gerar evento automático
-          ↓
-      atualizar peso anterior
-*/
 
 function detectAutomaticBalanca2History(
   data: unknown
@@ -941,12 +1376,11 @@ function detectAutomaticBalanca2History(
     );
 
     return null;
-
   }
 
-  /* ----------------------------------------------------------
+  /* ==========================================================
      PRIMEIRA LEITURA
-  ---------------------------------------------------------- */
+  ========================================================== */
 
   if (
     pesoAnteriorBalanca2 === null
@@ -965,12 +1399,11 @@ function detectAutomaticBalanca2History(
     );
 
     return null;
-
   }
 
-  /* ----------------------------------------------------------
+  /* ==========================================================
      DIFERENÇA
-  ---------------------------------------------------------- */
+  ========================================================== */
 
   const diferenca =
     Math.abs(
@@ -1001,13 +1434,9 @@ function detectAutomaticBalanca2History(
     diferenca
   );
 
-  console.log(
-    "Regra: diferença > 1 kg"
-  );
-
-  /* ----------------------------------------------------------
-     DIFERENÇA NÃO SUFICIENTE
-  ---------------------------------------------------------- */
+  /* ==========================================================
+     DIFERENÇA <= 1
+  ========================================================== */
 
   if (
     diferenca <= 1
@@ -1026,27 +1455,11 @@ function detectAutomaticBalanca2History(
     );
 
     return null;
-
   }
 
-  /* ----------------------------------------------------------
+  /* ==========================================================
      NOVA PESAGEM
-  ---------------------------------------------------------- */
-
-  console.log(
-    "BALANÇA 2: diferença > 1 kg."
-  );
-
-  console.log(
-    "BALANÇA 2: NOVA PESAGEM DETECTADA."
-  );
-
-  /*
-     Guardamos o peso atual ANTES de retornar.
-
-     Isso evita que a mesma alteração seja
-     registrada várias vezes.
-  */
+  ========================================================== */
 
   const pesoAnterior =
     pesoAnteriorBalanca2;
@@ -1064,16 +1477,33 @@ function detectAutomaticBalanca2History(
         >
       : {};
 
+  /* ==========================================================
+     PRODUTO
+  ========================================================== */
+
   const produto =
     original.produto ??
     original.produtoNome ??
     original.produto_nome ??
     original.product;
 
+  /* ==========================================================
+     DATA/HORA
+  ========================================================== */
+
   const timestamp =
-    original.timestamp ??
-    original.data_hora ??
-    original.data;
+    getPayloadTimestamp(
+      original
+    );
+
+  const dataHora =
+    formatDateTime(
+      timestamp
+    );
+
+  /* ==========================================================
+     EVENTO
+  ========================================================== */
 
   const evento:
     Balanca2AutomaticHistoryPayload = {
@@ -1125,29 +1555,41 @@ function detectAutomaticBalanca2History(
     estado:
       "automatico",
 
+    timestamp,
+
+    dataHora,
+
+    data_hora:
+      dataHora,
+
+    timestampIso:
+      timestampToIso(
+        timestamp
+      ),
+
     ...(produto !== undefined
       ? {
           produto:
-            String(produto),
+            String(
+              produto
+            ),
 
           produtoNome:
-            String(produto),
+            String(
+              produto
+            ),
 
           produto_nome:
-            String(produto),
+            String(
+              produto
+            ),
 
           product:
-            String(produto),
+            String(
+              produto
+            ),
         }
       : {}),
-
-    ...(timestamp !== undefined
-      ? {
-          timestamp:
-            String(timestamp),
-        }
-      : {}),
-
   };
 
   console.log(
@@ -1159,11 +1601,15 @@ function detectAutomaticBalanca2History(
   );
 
   console.log(
+    "Data/Hora:",
+    dataHora
+  );
+
+  console.log(
     "--------------------------------------"
   );
 
   return evento;
-
 }
 
 /* ============================================================
@@ -1173,25 +1619,19 @@ function detectAutomaticBalanca2History(
 function subscribeToTopics(): void {
 
   if (!mqttClient) {
-
     return;
-
   }
 
   if (
     !mqttClient.connected
   ) {
-
     return;
-
   }
 
   if (
     mqttSubscriptionsReady
   ) {
-
     return;
-
   }
 
   const topics =
@@ -1219,7 +1659,6 @@ function subscribeToTopics(): void {
         );
 
         return;
-
       }
 
       mqttSubscriptionsReady =
@@ -1233,28 +1672,20 @@ function subscribeToTopics(): void {
         "MQTT SUBSCRITO COM SUCESSO"
       );
 
-      console.log(
-        "Tópicos:"
-      );
-
       topics.forEach(
         topic => {
-
           console.log(
             "  ✓",
             topic
           );
-
         }
       );
 
       console.log(
         "======================================"
       );
-
     }
   );
-
 }
 
 /* ============================================================
@@ -1284,7 +1715,6 @@ export function connectMqtt(
 
   second:
     MqttHandlers = {}
-
 ): MqttClient | null {
 
   /* ==========================================================
@@ -1295,13 +1725,11 @@ export function connectMqtt(
     typeof window ===
     "undefined"
   ) {
-
     return null;
-
   }
 
   /* ==========================================================
-     NORMALIZAR ARGUMENTOS
+     ARGUMENTOS
   ========================================================== */
 
   if (
@@ -1336,13 +1764,11 @@ export function connectMqtt(
 
       onMessageError:
         first.onMessageError,
-
     };
-
   }
 
   /* ==========================================================
-     VALIDAR CALLBACK
+     CALLBACK
   ========================================================== */
 
   if (
@@ -1364,7 +1790,6 @@ export function connectMqtt(
     );
 
     return null;
-
   }
 
   /* ==========================================================
@@ -1388,7 +1813,6 @@ export function connectMqtt(
     notifyConnect();
 
     return mqttClient;
-
   }
 
   /* ==========================================================
@@ -1401,7 +1825,6 @@ export function connectMqtt(
   ) {
 
     return mqttClient;
-
   }
 
   /* ==========================================================
@@ -1436,7 +1859,6 @@ export function connectMqtt(
     );
 
     return null;
-
   }
 
   /* ==========================================================
@@ -1466,7 +1888,6 @@ export function connectMqtt(
     );
 
     return null;
-
   }
 
   /* ==========================================================
@@ -1482,11 +1903,6 @@ export function connectMqtt(
   mqttSubscriptionsReady =
     false;
 
-  /*
-     Nova conexão começa uma nova sequência
-     de comparação da Balança 2.
-  */
-
   pesoAnteriorBalanca2 =
     null;
 
@@ -1495,7 +1911,7 @@ export function connectMqtt(
   );
 
   /* ==========================================================
-     OPÇÕES MQTT
+     OPÇÕES
   ========================================================== */
 
   const options:
@@ -1523,29 +1939,24 @@ export function connectMqtt(
       `nextjs-armazem-${Date.now()}-${Math.random()
         .toString(16)
         .slice(2)}`,
-
   };
 
   /* ==========================================================
-     AUTENTICAÇÃO OPCIONAL
+     AUTENTICAÇÃO
   ========================================================== */
 
   if (
     mqttUsername
   ) {
-
     options.username =
       mqttUsername;
-
   }
 
   if (
     mqttPassword
   ) {
-
     options.password =
       mqttPassword;
-
   }
 
   /* ==========================================================
@@ -1572,7 +1983,9 @@ export function connectMqtt(
       error instanceof Error
         ? error
         : new Error(
-            String(error)
+            String(
+              error
+            )
           );
 
     notifyStatus(
@@ -1584,7 +1997,6 @@ export function connectMqtt(
     );
 
     return null;
-
   }
 
   /* ==========================================================
@@ -1625,7 +2037,6 @@ export function connectMqtt(
       notifyConnect();
 
       subscribeToTopics();
-
     }
   );
 
@@ -1640,9 +2051,7 @@ export function connectMqtt(
       if (
         mqttManualDisconnect
       ) {
-
         return;
-
       }
 
       mqttConnecting =
@@ -1658,7 +2067,6 @@ export function connectMqtt(
       notifyStatus(
         "Reconectando"
       );
-
     }
   );
 
@@ -1673,9 +2081,7 @@ export function connectMqtt(
       if (
         mqttManualDisconnect
       ) {
-
         return;
-
       }
 
       mqttSubscriptionsReady =
@@ -1688,7 +2094,6 @@ export function connectMqtt(
       notifyStatus(
         "Offline"
       );
-
     }
   );
 
@@ -1708,7 +2113,6 @@ export function connectMqtt(
       notifyError(
         error
       );
-
     }
   );
 
@@ -1741,9 +2145,7 @@ export function connectMqtt(
         notifyStatus(
           "Reconectando"
         );
-
       }
-
     }
   );
 
@@ -1766,7 +2168,6 @@ export function connectMqtt(
       notifyStatus(
         "Offline"
       );
-
     }
   );
 
@@ -1787,9 +2188,7 @@ export function connectMqtt(
         ).trim();
 
       if (!texto) {
-
         return;
-
       }
 
       let data =
@@ -1797,11 +2196,21 @@ export function connectMqtt(
           texto
         );
 
+      /*
+       * AQUI está a parte principal:
+       *
+       * Antes de enviar para o hook,
+       * normalizamos data/hora.
+       */
       data =
         normalizeMessage(
           topic,
           data
         );
+
+      /* ======================================================
+         DEBUG
+      ====================================================== */
 
       console.log(
         "======================================"
@@ -1821,13 +2230,90 @@ export function connectMqtt(
         data
       );
 
+      /* ======================================================
+         DEBUG HISTÓRICO
+      ====================================================== */
+
+      if (
+        topic ===
+          MQTT_TOPICS.history1 ||
+        topic ===
+          MQTT_TOPICS.history2
+      ) {
+
+        if (
+          data &&
+          typeof data ===
+            "object" &&
+          !Array.isArray(data)
+        ) {
+
+          const history =
+            data as Record<
+              string,
+              unknown
+            >;
+
+          console.log(
+            "--------------------------------------"
+          );
+
+          console.log(
+            "HISTÓRICO RECEBIDO"
+          );
+
+          console.log(
+            "Produto:",
+            history.produto ??
+            history.produtoNome ??
+            history.product
+          );
+
+          console.log(
+            "Peso:",
+            history.peso ??
+            history.weight
+          );
+
+          console.log(
+            "Data:",
+            history.data
+          );
+
+          console.log(
+            "Hora:",
+            history.hora
+          );
+
+          console.log(
+            "Data/Hora:",
+            history.data_hora ??
+            history.dataHora
+          );
+
+          console.log(
+            "Timestamp:",
+            history.timestamp
+          );
+
+          console.log(
+            "Timestamp ISO:",
+            history.timestampIso
+          );
+
+          console.log(
+            "--------------------------------------"
+          );
+        }
+      }
+
       console.log(
         "======================================"
       );
 
-      /* ------------------------------------------------------
-         STATUS GERAL DO ESP32
-      ------------------------------------------------------ */
+      /* ======================================================
+         STATUS GERAL
+      ====================================================== */
 
       if (
         topic ===
@@ -1864,16 +2350,13 @@ export function connectMqtt(
             notifyStatus(
               "Online"
             );
-
           }
-
         }
-
       }
 
-      /* ------------------------------------------------------
+      /* ======================================================
          FINGERPRINT
-      ------------------------------------------------------ */
+      ====================================================== */
 
       if (
         topic ===
@@ -1923,13 +2406,17 @@ export function connectMqtt(
             fp.confianca
           );
 
+          console.log(
+            "Data/Hora:",
+            fp.dataHora
+          );
         }
-
       }
 
-      /* ------------------------------------------------------
-         BALANÇA 2 — HISTÓRICO AUTOMÁTICO
-      ------------------------------------------------------ */
+      /* ======================================================
+         BALANÇA 2
+         HISTÓRICO AUTOMÁTICO
+      ====================================================== */
 
       if (
         topic ===
@@ -1944,25 +2431,6 @@ export function connectMqtt(
         if (
           automaticHistory !== null
         ) {
-
-          /*
-             IMPORTANTE:
-
-             O evento automático é entregue
-             ao mesmo onMessage usado pelo
-             componente React.
-
-             O componente deverá reconhecer:
-
-                 automatico === true
-                 balanca === 2
-
-             e então atualizar a tabela.
-          */
-
-          console.log(
-            "BALANÇA 2: enviando evento automático para onMessage."
-          );
 
           const automaticHandler =
             currentOnMessage;
@@ -1989,20 +2457,18 @@ export function connectMqtt(
               notifyMessageError(
                 error instanceof Error
                   ? error.message
-                  : String(error)
+                  : String(
+                      error
+                    )
               );
-
             }
-
           }
-
         }
-
       }
 
-      /* ------------------------------------------------------
+      /* ======================================================
          CALLBACK PRINCIPAL
-      ------------------------------------------------------ */
+      ====================================================== */
 
       const handler =
         currentOnMessage;
@@ -2017,7 +2483,6 @@ export function connectMqtt(
         );
 
         return;
-
       }
 
       try {
@@ -2035,20 +2500,17 @@ export function connectMqtt(
         );
 
         notifyMessageError(
-
           error instanceof Error
             ? error.message
-            : String(error)
-
+            : String(
+                error
+              )
         );
-
       }
-
     }
   );
 
   return mqttClient;
-
 }
 
 /* ============================================================
@@ -2067,7 +2529,6 @@ export function publishMqtt(
     );
 
     return false;
-
   }
 
   if (
@@ -2083,7 +2544,6 @@ export function publishMqtt(
     );
 
     return false;
-
   }
 
   let payload: string;
@@ -2103,7 +2563,6 @@ export function publishMqtt(
     );
 
     return false;
-
   }
 
   try {
@@ -2127,9 +2586,7 @@ export function publishMqtt(
           notifyError(
             error
           );
-
         }
-
       }
     );
 
@@ -2165,9 +2622,7 @@ export function publishMqtt(
     );
 
     return false;
-
   }
-
 }
 
 /* ============================================================
@@ -2181,7 +2636,6 @@ export function setProduct(
   return publishMqtt(
     MQTT_TOPICS.command,
     {
-
       command:
         "set_product",
 
@@ -2192,10 +2646,8 @@ export function setProduct(
 
       produtoNome:
         produto,
-
     }
   );
-
 }
 
 export const definirProduto =
@@ -2210,16 +2662,13 @@ export function startWeighing(): boolean {
   return publishMqtt(
     MQTT_TOPICS.command,
     {
-
       command:
         "start_weighing",
 
       comando:
         "start_weighing",
-
     }
   );
-
 }
 
 export const iniciarPesagem =
@@ -2238,7 +2687,11 @@ export function confirmSensor1(
     | number
 ): boolean {
 
-  const payload: Record<string, unknown> = {
+  const payload:
+    Record<
+      string,
+      unknown
+    > = {
 
     command:
       "confirm_sensor1",
@@ -2248,12 +2701,11 @@ export function confirmSensor1(
 
     sensor:
       1,
-
   };
 
-  // ==========================================================
-  // PESO DIRETO
-  // ==========================================================
+  /* ==========================================================
+     PESO DIRETO
+  ========================================================== */
 
   if (
     typeof data ===
@@ -2274,22 +2726,17 @@ export function confirmSensor1(
 
     payload.pesoSensor1 =
       data;
-
   }
 
-  // ==========================================================
-  // OBJETO
-  // ==========================================================
+  /* ==========================================================
+     OBJETO
+  ========================================================== */
 
   if (
     typeof data ===
       "object" &&
     data !== null
   ) {
-
-    // --------------------------------------------------------
-    // PRODUTO
-    // --------------------------------------------------------
 
     if (
       data.produto !==
@@ -2309,13 +2756,13 @@ export function confirmSensor1(
         payload.produtoNome =
           produto;
 
+        payload.produto_nome =
+          produto;
+
+        payload.product =
+          produto;
       }
-
     }
-
-    // --------------------------------------------------------
-    // PESO
-    // --------------------------------------------------------
 
     if (
       data.peso !==
@@ -2336,9 +2783,7 @@ export function confirmSensor1(
 
       payload.pesoSensor1 =
         data.peso;
-
     }
-
   }
 
   console.log(
@@ -2405,14 +2850,15 @@ export function registerFingerprint(
 
     nomePessoa =
       data.nome;
-
   }
 
   nomePessoa =
     nomePessoa.trim();
 
   if (
-    !Number.isFinite(id) ||
+    !Number.isFinite(
+      id
+    ) ||
     id <= 0
   ) {
 
@@ -2422,7 +2868,6 @@ export function registerFingerprint(
     );
 
     return false;
-
   }
 
   if (!nomePessoa) {
@@ -2432,7 +2877,6 @@ export function registerFingerprint(
     );
 
     return false;
-
   }
 
   return publishMqtt(
@@ -2467,10 +2911,8 @@ export function registerFingerprint(
 
       pessoaId:
         String(id),
-
     }
   );
-
 }
 
 export const cadastrarFingerprint =
@@ -2491,10 +2933,8 @@ export function requestFingerprint(): boolean {
 
       comando:
         "request_fingerprint",
-
     }
   );
-
 }
 
 export const solicitarFingerprint =
@@ -2506,16 +2946,21 @@ export const solicitarFingerprint =
 
 export function printReceipt(
   data?: {
-    pessoa_id?: string | number;
 
-    pessoa_nome?: string;
+    pessoa_id?:
+      string | number;
+
+    pessoa_nome?:
+      string;
 
     fingerprint_id?:
       string | number;
 
-    produto?: string;
+    produto?:
+      string;
 
-    peso?: number;
+    peso?:
+      number;
   }
 ): boolean {
 
@@ -2530,10 +2975,8 @@ export function printReceipt(
         "print_receipt",
 
       ...(data ?? {}),
-
     }
   );
-
 }
 
 export const imprimirRecibo =
@@ -2557,10 +3000,8 @@ export function resetSensor1(): boolean {
 
       sensor:
         1,
-
     }
   );
-
 }
 
 /* ============================================================
@@ -2578,10 +3019,8 @@ export function resetFingerprint(): boolean {
 
       comando:
         "reset_fingerprint",
-
     }
   );
-
 }
 
 /* ============================================================
@@ -2599,10 +3038,8 @@ export function resetWarehouse(): boolean {
 
       comando:
         "reset",
-
     }
   );
-
 }
 
 export const resetArmazem =
@@ -2615,9 +3052,7 @@ export const resetArmazem =
 export function disconnectMqtt(): void {
 
   if (!mqttClient) {
-
     return;
-
   }
 
   mqttManualDisconnect =
@@ -2628,13 +3063,6 @@ export function disconnectMqtt(): void {
 
   mqttSubscriptionsReady =
     false;
-
-  /*
-     Limpa o estado da comparação.
-
-     Na próxima conexão a primeira leitura
-     será novamente usada como referência.
-  */
 
   pesoAnteriorBalanca2 =
     null;
@@ -2649,7 +3077,6 @@ export function disconnectMqtt(): void {
         console.log(
           "MQTT desconectado."
         );
-
       }
     );
 
@@ -2659,7 +3086,6 @@ export function disconnectMqtt(): void {
       "Erro ao desconectar MQTT:",
       error
     );
-
   }
 
   mqttClient =
@@ -2670,25 +3096,16 @@ export function disconnectMqtt(): void {
 
   currentHandlers =
     {};
-
 }
 
 /* ============================================================
-   RESET DO ESTADO AUTOMÁTICO DA BALANÇA 2
+   RESET ESTADO BALANÇA 2
 ============================================================ */
-
-/*
-   Esta função NÃO envia MQTT.
-
-   Apenas permite que o componente React reinicie
-   a referência de comparação quando necessário.
-*/
 
 export function resetAutomaticBalanca2State(): void {
 
   pesoAnteriorBalanca2 =
     null;
-
 }
 
 /* ============================================================
@@ -2699,7 +3116,6 @@ export function getPesoAnteriorBalanca2():
   number | null {
 
   return pesoAnteriorBalanca2;
-
 }
 
 /* ============================================================
@@ -2711,7 +3127,6 @@ export function isMqttConnected(): boolean {
   return Boolean(
     mqttClient?.connected
   );
-
 }
 
 /* ============================================================
@@ -2723,7 +3138,6 @@ export function isMqttReconnecting(): boolean {
   return Boolean(
     mqttClient?.reconnecting
   );
-
 }
 
 /* ============================================================
@@ -2735,6 +3149,4 @@ export function getMqttClient():
   | null {
 
   return mqttClient;
-
 }
-
