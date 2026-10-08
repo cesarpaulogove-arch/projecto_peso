@@ -1,3 +1,4 @@
+
 import { NextResponse } from "next/server";
 import nodemailer from "nodemailer";
 
@@ -5,16 +6,13 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 // ============================================================
-// TIPOS
+// TIPO — SOMENTE DADOS DA TABELA 1
 // ============================================================
 
 interface HistoricoBalanca1 {
   id: string | number;
   product?: string;
   weight: number;
-  pessoaNome?: string;
-  fingerprintId?: number | string;
-  printed?: boolean;
   timestamp?: string;
 }
 
@@ -74,6 +72,7 @@ export async function POST(
   console.log("========================================");
 
   try {
+
     // ========================================================
     // CONFIGURAÇÕES SMTP
     // ========================================================
@@ -208,19 +207,11 @@ export async function POST(
       await req.json();
 
     console.log(
-      "BODY RECEBIDO:"
-    );
-
-    console.log(
-      JSON.stringify(
-        body,
-        null,
-        2
-      )
+      "BODY RECEBIDO."
     );
 
     // ========================================================
-    // SOMENTE HISTÓRICO DA BALANÇA 1
+    // SOMENTE HISTÓRICO DA TABELA 1
     // ========================================================
 
     const historico =
@@ -279,6 +270,18 @@ export async function POST(
 
     // ========================================================
     // NORMALIZAR
+    //
+    // IMPORTANTE:
+    // SOMENTE:
+    // - id
+    // - product
+    // - weight
+    // - timestamp
+    //
+    // NÃO EXISTE:
+    // - pessoaNome
+    // - fingerprintId
+    // - printed
     // ========================================================
 
     const historicoBalanca1:
@@ -323,23 +326,6 @@ export async function POST(
             weight:
               peso,
 
-            pessoaNome:
-              String(
-                item?.pessoaNome ??
-                item?.pessoa_nome ??
-                ""
-              ).trim(),
-
-            fingerprintId:
-              item?.fingerprintId ??
-              item?.fingerprint_id ??
-              "",
-
-            printed:
-              Boolean(
-                item?.printed
-              ),
-
             timestamp:
               item?.timestamp ??
               "",
@@ -348,12 +334,12 @@ export async function POST(
       );
 
     console.log(
-      "Histórico Balança 1 normalizado:",
+      "Histórico Tabela 1 normalizado:",
       historicoBalanca1.length
     );
 
     // ========================================================
-    // DATA/HORA
+    // DATA/HORA DO ENVIO
     // ========================================================
 
     const agora =
@@ -369,6 +355,11 @@ export async function POST(
 
     // ========================================================
     // LINHAS HTML
+    //
+    // SOMENTE:
+    // PRODUTO
+    // PESO
+    // DATA
     // ========================================================
 
     const linhas =
@@ -385,6 +376,7 @@ export async function POST(
 
             return `
               <tr>
+
                 <td>
                   ${escaparHTML(
                     item.product || "-"
@@ -397,29 +389,10 @@ export async function POST(
 
                 <td>
                   ${escaparHTML(
-                    item.pessoaNome || "-"
-                  )}
-                </td>
-
-                <td>
-                  ${escaparHTML(
-                    item.fingerprintId || "-"
-                  )}
-                </td>
-
-                <td>
-                  ${
-                    item.printed
-                      ? "Impresso"
-                      : "Não impresso"
-                  }
-                </td>
-
-                <td>
-                  ${escaparHTML(
                     dataRegistro
                   )}
                 </td>
+
               </tr>
             `;
           }
@@ -427,7 +400,7 @@ export async function POST(
         .join("");
 
     // ========================================================
-    // HTML
+    // HTML DO EMAIL
     // ========================================================
 
     const html = `
@@ -596,12 +569,19 @@ export async function POST(
             <thead>
 
               <tr>
-                <th>Produto</th>
-                <th>Peso</th>
-                <th>Pessoa</th>
-                <th>Fingerprint</th>
-                <th>Impressão</th>
-                <th>Data</th>
+
+                <th>
+                  Produto
+                </th>
+
+                <th>
+                  Peso
+                </th>
+
+                <th>
+                  Data
+                </th>
+
               </tr>
 
             </thead>
